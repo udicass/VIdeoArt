@@ -1,0 +1,47 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "buildCommand": "vite build && node scripts/pruneDeployedMovies.mjs",
+  "outputDirectory": "dist",
+  "framework": "vite",
+  "installCommand": "npm install",
+  "redirects": [
+    {
+      "source": "/movies/compressed/(.*)",
+      "destination": "https://pub-3a3ec970180e4d9db03559eb82c9b828.r2.dev/$1",
+      "permanent": false
+    },
+    {
+      "source": "/movies/(.*)",
+      "destination": "https://pub-3a3ec970180e4d9db03559eb82c9b828.r2.dev/$1",
+      "permanent": false
+    }
+  ],
+  "headers": [
+    {
+      "source": "/(.*)",
+      "headers": [
+        {
+          "key": "Permissions-Policy",
+          "value": "camera=(*), microphone=(*)"
+        }
+      ]
+    }
+  ],
+  "rewrites": [
+    {
+      "source": "/((?!api/|movies/|assets/|.*\\..*).*)",
+      "destination": "/index.html"
+    }
+  ],
+  "functions": {
+    "api/brain-memory.js": {
+      "maxDuration": 15
+    },
+    "api/gemini.js": {
+      "maxDuration": 30
+    },
+    "api/gemini-tts.js": {
+      "maxDuration": 15
+    }
+  }
+}

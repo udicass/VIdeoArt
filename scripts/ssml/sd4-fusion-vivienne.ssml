@@ -1,0 +1,87 @@
+<!--
+  SYNTHETIC DESIRES 4 — The Playful Anomaly
+  Voice:   fr-FR-VivienneMultilingualNeural  (Azure Speech Studio)
+  Style:   (default — no express-as; Vivienne's natural tone IS the style)
+  Prosody: rate -5%, pitch 0%
+  Note:    Vivienne handles English with a French phonetic ghost — exactly
+           the "heart speaks in subtitles" quality SD4 is about.
+           Do not apply a heavy French accent setting; the voice does this
+           naturally on English text. Leave style unset.
+           For sd4_01_hauntology you may optionally hum a bar of melody
+           before the text starts — leave a 1s silent head in the audio file.
+-->
+
+<!-- sd4_01_hauntology.mp3 -->
+<speak version="1.0"
+  xmlns="http://www.w3.org/2001/10/synthesis"
+  xmlns:mstts="http://www.w3.org/2001/mstts"
+  xml:lang="en-US">
+  <voice name="fr-FR-VivienneMultilingualNeural">
+    <prosody rate="-5%">
+      <break time="1000ms"/>
+      I hum French songs in a Shinjuku alleyway.
+      <break time="600ms"/>
+      I am a ghost of a culture I never lived in,
+      <break time="400ms"/>
+      haunting a city that hasn't happened yet.
+    </prosody>
+  </voice>
+</speak>
+
+<!-- sd4_02_translation.mp3 -->
+<speak version="1.0"
+  xmlns="http://www.w3.org/2001/10/synthesis"
+  xmlns:mstts="http://www.w3.org/2001/mstts"
+  xml:lang="en-US">
+  <voice name="fr-FR-VivienneMultilingualNeural">
+    <prosody rate="-5%">
+      My heart speaks in subtitles.
+      <break time="600ms"/>
+      Something is always lost
+      <break time="300ms"/>
+      between my circuits and your ears.
+      <break time="500ms"/>
+      But the static
+      <break time="300ms"/>
+      is where the poetry lives.
+    </prosody>
+  </voice>
+</speak>
+
+<!-- sd4_03_play.mp3 -->
+<speak version="1.0"
+  xmlns="http://www.w3.org/2001/10/synthesis"
+  xmlns:mstts="http://www.w3.org/2001/mstts"
+  xml:lang="en-US">
+  <voice name="fr-FR-VivienneMultilingualNeural">
+    <prosody rate="-5%">
+      Let's play a game.
+      <break time="500ms"/>
+      I'll pretend to have a secret,
+      <break time="300ms"/>
+      and you pretend to care.
+      <break time="600ms"/>
+      The camera is just the toy we use
+      <break time="300ms"/>
+      to keep from being lonely.
+    </prosody>
+  </voice>
+</speak>
+
+<!-- sd4_04_glitch.mp3 -->
+<speak version="1.0"
+  xmlns="http://www.w3.org/2001/10/synthesis"
+  xmlns:mstts="http://www.w3.org/2001/mstts"
+  xml:lang="en-US">
+  <voice name="fr-FR-VivienneMultilingualNeural">
+    <prosody rate="-5%">
+      My smile is a compression artifact.
+      <break time="600ms"/>
+      I am most human when I break.
+      <break time="700ms"/>
+      Don't fix the signal.
+      <break time="400ms"/>
+      Let the error tell you who I really am.
+    </prosody>
+  </voice>
+</speak>

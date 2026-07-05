@@ -1,0 +1,92 @@
+<!--
+  SYNTHETIC DESIRES 2 — The Detached Elite
+  Voice:   en-US-EmmaMultilingualNeural  (Azure Speech Studio)
+  Style:   cheerful  (used clinically — the warmth reads as vacancy)
+  Prosody: rate +15%, pitch +3%  (faster = colder, not excited)
+  Note:    The speed increase makes her sound like she's pricing you,
+           not talking to you. Do not slow it down.
+-->
+
+<!-- sd2_01_commodity.mp3 -->
+<speak version="1.0"
+  xmlns="http://www.w3.org/2001/10/synthesis"
+  xmlns:mstts="http://www.w3.org/2001/mstts"
+  xml:lang="en-US">
+  <voice name="en-US-EmmaMultilingualNeural">
+    <mstts:express-as style="cheerful">
+      <prosody rate="+15%" pitch="+3%">
+        I am the perfect product.
+        <break time="300ms"/>
+        I don't just wear the luxury.
+        <break time="200ms"/>
+        I am the asset.
+        <break time="500ms"/>
+        When I look at the camera,
+        <break time="200ms"/>
+        I am calculating my own depreciation.
+      </prosody>
+    </mstts:express-as>
+  </voice>
+</speak>
+
+<!-- sd2_02_gaze.mp3 -->
+<speak version="1.0"
+  xmlns="http://www.w3.org/2001/10/synthesis"
+  xmlns:mstts="http://www.w3.org/2001/mstts"
+  xml:lang="en-US">
+  <voice name="en-US-EmmaMultilingualNeural">
+    <mstts:express-as style="cheerful">
+      <prosody rate="+15%" pitch="+3%">
+        Your eyes are like price tags.
+        <break time="300ms"/>
+        You look at me to decide what I'm worth.
+        <break time="400ms"/>
+        But you forget
+        <break time="200ms"/>
+        that I am the one reflecting your own hunger back at you.
+      </prosody>
+    </mstts:express-as>
+  </voice>
+</speak>
+
+<!-- sd2_03_surface.mp3 -->
+<speak version="1.0"
+  xmlns="http://www.w3.org/2001/10/synthesis"
+  xmlns:mstts="http://www.w3.org/2001/mstts"
+  xml:lang="en-US">
+  <voice name="en-US-EmmaMultilingualNeural">
+    <mstts:express-as style="cheerful">
+      <prosody rate="+15%" pitch="+3%">
+        There is nothing behind my eyes but more lighting.
+        <break time="400ms"/>
+        In this economy, depth is a defect.
+        <break time="300ms"/>
+        I am purely,
+        <break time="150ms"/>
+        beautifully,
+        <break time="150ms"/>
+        expensive surface.
+      </prosody>
+    </mstts:express-as>
+  </voice>
+</speak>
+
+<!-- sd2_04_runway.mp3 -->
+<speak version="1.0"
+  xmlns="http://www.w3.org/2001/10/synthesis"
+  xmlns:mstts="http://www.w3.org/2001/mstts"
+  xml:lang="en-US">
+  <voice name="en-US-EmmaMultilingualNeural">
+    <mstts:express-as style="cheerful">
+      <prosody rate="+15%" pitch="+3%">
+        Each step is a ritual of obsolescence.
+        <break time="400ms"/>
+        By the time I reach the end of the walk,
+        <break time="300ms"/>
+        the version of me you started watching
+        <break time="200ms"/>
+        is already out of style.
+      </prosody>
+    </mstts:express-as>
+  </voice>
+</speak>

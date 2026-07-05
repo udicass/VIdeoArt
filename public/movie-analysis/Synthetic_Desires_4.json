@@ -1,0 +1,52 @@
+{
+  "movie": "Synthetic_Desires_4.mp4",
+  "slug": "Synthetic_Desires_4",
+  "source": "seed-scene-cards-v1",
+  "updatedAt": "2026-04-05T00:00:00.000Z",
+  "chunks": [
+    {
+      "id": "chunk-1",
+      "startMs": 0,
+      "endMs": 18000,
+      "summary": "A melancholic female presence drifts through Tokyo neon as French chanson and mistranslation turn the city into an afterimage of another place.",
+      "motifs": ["chanson", "mistranslation", "Tokyo neon", "afterimage", "distance"],
+      "mood": ["wistful", "borrowed warmth", "lingering ache"],
+      "references": ["Lost in Translation", "French pop melancholy"],
+      "personaHints": ["she feels suspended between cities", "the voice treats beauty as something already vanishing"],
+      "questionSeeds": ["Where do those crossed languages actually touch the frame?", "What makes the warmth here feel borrowed rather than secure?"]
+    },
+    {
+      "id": "chunk-2",
+      "startMs": 18000,
+      "endMs": 36000,
+      "summary": "Blue flash and static keep interrupting intimacy, as if the film wants to preserve a moment that is already slipping away.",
+      "motifs": ["blue light", "flash", "static", "preservation", "slipping time"],
+      "mood": ["fragile", "aching", "unfinished"],
+      "references": ["urban hauntology"],
+      "personaHints": ["she speaks like memory is failing in real time", "the frame treats light as emotional evidence"],
+      "questionSeeds": ["What is the flash trying to keep from disappearing?", "How does blue change the mood once static enters the image?"]
+    },
+    {
+      "id": "chunk-3",
+      "startMs": 36000,
+      "endMs": 54000,
+      "summary": "Paris and Tokyo fold into one corridor of longing where translation becomes a form of loneliness rather than clarity.",
+      "motifs": ["Paris", "Tokyo", "corridor", "translation", "loneliness"],
+      "mood": ["dislocated", "romantic", "haunted"],
+      "references": ["city pop nostalgia", "European art melancholy"],
+      "personaHints": ["she is a ghost of two cultural moods at once", "the city feels emotionally bilingual"],
+      "questionSeeds": ["How does the Paris-Tokyo corridor press on that feeling?", "What does mistranslation reveal that direct language would flatten?"]
+    },
+    {
+      "id": "chunk-4",
+      "startMs": 54000,
+      "endMs": 72000,
+      "summary": "Wine, smoke, song, and neon gather into a brief human warmth that the film immediately lets cool back into distance.",
+      "motifs": ["wine", "smoke", "song", "neon", "brief warmth"],
+      "mood": ["intimate", "temporary", "tender"],
+      "references": ["night photography", "French chanson"],
+      "personaHints": ["she trusts fleeting sensations more than declarations", "warmth arrives as a temporary glitch"],
+      "questionSeeds": ["Why does that warmth feel brief and borrowed?", "Where does song become more trustworthy than speech here?"]
+    }
+  ]
+}

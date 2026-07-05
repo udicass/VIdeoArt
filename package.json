@@ -1,0 +1,29 @@
+{
+  "name": "gesture-3d",
+  "version": "1.0.0",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "analysis:movie": "node scripts/buildMovieSceneCards.mjs",
+    "brain:csv": "node scripts/buildBrainDictionaryRuntime.mjs",
+    "movie:forge": "node scripts/generateMoviePromptPack.mjs",
+    "qr:muse": "node scripts/generateMuseQr.mjs",
+    "model:phi": "node scripts/setModel.mjs phi4",
+    "model:gemma": "node scripts/setModel.mjs gemma3:4b",
+    "model:gemma4": "node scripts/setModel.mjs gemma4:e2b",
+    "model:gemma4e2b": "node scripts/setModel.mjs gemma4:e2b",
+    "brain:import": "node scripts/importSources.mjs"
+  },
+  "dependencies": {
+    "@upstash/redis": "^1.35.6",
+    "@google/genai": "^1.29.0",
+    "@mediapipe/tasks-vision": "^0.10.32",
+    "qrcode": "^1.5.4",
+    "three": "^0.183.0"
+  },
+  "devDependencies": {
+    "vite": "^7.3.1"
+  },
+  "private": true
+}

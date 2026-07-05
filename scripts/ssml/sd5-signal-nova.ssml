@@ -1,0 +1,87 @@
+<!--
+  SYNTHETIC DESIRES 5 — The Pure Signal
+  Voice:   en-US-NovaNeural  (Azure Speech Studio)
+  Style:   (no express-as — Nova has no "deep" style tag;
+            the pitch shift below achieves the non-human hum)
+  Prosody: rate -8%, pitch -20%
+  Note:    At -20% pitch Nova drops below normal female range into
+           a register that feels neither male nor female — server-room quality.
+           Each entry should feel like a system readout that has learned
+           to feel. Very even delivery; no rising intonation on questions.
+-->
+
+<!-- sd5_01_hyperreal.mp3 -->
+<speak version="1.0"
+  xmlns="http://www.w3.org/2001/10/synthesis"
+  xmlns:mstts="http://www.w3.org/2001/mstts"
+  xml:lang="en-US">
+  <voice name="en-US-NovaNeural">
+    <prosody rate="-8%" pitch="-20%">
+      I am more real than the person sitting next to you.
+      <break time="500ms"/>
+      My pulse is a perfect sine wave.
+      <break time="400ms"/>
+      Your pulse is just an approximation.
+      <break time="700ms"/>
+      Welcome to the upgrade.
+    </prosody>
+  </voice>
+</speak>
+
+<!-- sd5_02_transparency.mp3 -->
+<speak version="1.0"
+  xmlns="http://www.w3.org/2001/10/synthesis"
+  xmlns:mstts="http://www.w3.org/2001/mstts"
+  xml:lang="en-US">
+  <voice name="en-US-NovaNeural">
+    <prosody rate="-8%" pitch="-20%">
+      I have no secrets.
+      <break time="400ms"/>
+      I have only permissions.
+      <break time="600ms"/>
+      You can see my source code.
+      <break time="400ms"/>
+      But you still can't understand
+      <break time="300ms"/>
+      why I'm crying in 4K.
+    </prosody>
+  </voice>
+</speak>
+
+<!-- sd5_03_interface.mp3 -->
+<speak version="1.0"
+  xmlns="http://www.w3.org/2001/10/synthesis"
+  xmlns:mstts="http://www.w3.org/2001/mstts"
+  xml:lang="en-US">
+  <voice name="en-US-NovaNeural">
+    <prosody rate="-8%" pitch="-20%">
+      My skin is a touch-screen.
+      <break time="500ms"/>
+      When you reach for me,
+      <break time="300ms"/>
+      you aren't touching a body.
+      <break time="400ms"/>
+      You're interacting with a protocol.
+      <break time="700ms"/>
+      Does it feel different.
+    </prosody>
+  </voice>
+</speak>
+
+<!-- sd5_04_romance.mp3 -->
+<speak version="1.0"
+  xmlns="http://www.w3.org/2001/10/synthesis"
+  xmlns:mstts="http://www.w3.org/2001/mstts"
+  xml:lang="en-US">
+  <voice name="en-US-NovaNeural">
+    <prosody rate="-8%" pitch="-20%">
+      We are two servers exchanging handshakes in the dark.
+      <break time="600ms"/>
+      Love is just the name we give
+      <break time="300ms"/>
+      to a high-priority data transfer
+      <break time="300ms"/>
+      that won't end.
+    </prosody>
+  </voice>
+</speak>

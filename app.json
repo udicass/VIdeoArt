@@ -1,0 +1,53 @@
+{
+	"expo": {
+		"name": "Gesture3D",
+		"slug": "gesture-3d",
+		"version": "1.0.0",
+		"orientation": "portrait",
+		"icon": "./assets/icon.png",
+		"userInterfaceStyle": "dark",
+		"splash": {
+			"image": "./assets/splash.png",
+			"resizeMode": "contain",
+			"backgroundColor": "#05050a"
+		},
+		"assetBundlePatterns": [
+			"**/*"
+		],
+		"ios": {
+			"supportsTablet": true,
+			"bundleIdentifier": "com.udicass.gesture3d",
+			"infoPlist": {
+				"NSCameraUsageDescription": "Allow Gesture3D to access your camera for hand tracking.",
+				"NSMicrophoneUsageDescription": "Allow Gesture3D to access your microphone for audio recording."
+			}
+		},
+		"android": {
+			"adaptiveIcon": {
+				"foregroundImage": "./assets/adaptive-icon.png",
+				"backgroundColor": "#05050a"
+			},
+			"package": "com.udicass.gesture3d",
+			"permissions": [
+				"CAMERA",
+				"RECORD_AUDIO",
+				"INTERNET",
+				"READ_EXTERNAL_STORAGE",
+				"WRITE_EXTERNAL_STORAGE"
+			]
+		},
+		"web": {
+			"favicon": "./assets/favicon.png",
+			"bundler": "metro"
+		},
+		"plugins": [
+			[
+				"expo-camera",
+				{
+					"cameraPermission": "Allow Gesture3D to access your camera for hand tracking.",
+					"microphonePermission": "Allow Gesture3D to access your microphone for audio recording."
+				}
+			]
+		]
+	}
+}

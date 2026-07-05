@@ -1,0 +1,100 @@
+# OSX
+#
+.DS_Store
+
+# Ollama relay — local certificates (machine-specific, never commit)
+services/ollama-relay/relay.pfx
+services/ollama-relay/relay.cer
+services/ollama-relay/.cert-password
+
+# Xcode
+#
+build/
+*.pbxuser
+!default.pbxuser
+*.mode1v3
+!default.mode1v3
+*.mode2v3
+!default.mode2v3
+*.perspectivev3
+!default.perspectivev3
+xcuserdata
+*.xccheckout
+*.moved-aside
+DerivedData
+*.hmap
+*.ipa
+*.xcuserstate
+project.xcworkspace
+
+# Android/IntelliJ
+#
+build/
+.idea
+.gradle
+local.properties
+*.iml
+*.hprof
+.cxx/
+*.keystore
+!debug.keystore
+
+# node.js
+#
+node_modules/
+npm-debug.log
+yarn-error.log
+
+# Bundle artifacts
+*.jsbundle
+
+# Expo
+.expo/
+dist/
+web-build/
+
+# Vite
+vite.config.js.timestamp-*
+vite.config.ts.timestamp-*
+
+# Warm-brain capture exports (local only — move to warm-brain-captures/ before running injectWarmBrainSeeds.mjs)
+warm-brain-captures/*.json
+
+# Native
+*.orig.*
+*.jks
+*.p8
+*.p12
+*.key
+*.mobileprovision
+
+# Metro
+.metro-health-check*
+
+# Debug
+npm-debug.*
+yarn-debug.*
+yarn-error.*
+
+# Env
+.env
+.env.local
+.env.*.local
+
+# Temporary files
+*.swp
+*.swo
+*~
+.vscode/
+.vercel
+.env*.local
+
+# Local AI & Notebooks
+.claude/
+*.ipynb
+api/claude.js
+continue_llm_config_template.yaml
+services/litellm-proxy/
+src/movieBrains1.js
+src/movieBrains2.js
+src/movieBrains__.js

@@ -1,0 +1,41 @@
+{
+  "movie": "Synthetic_Desires_1.mp4",
+  "slug": "Synthetic_Desires_1",
+  "source": "seed-scene-cards-v1",
+  "updatedAt": "2026-04-05T00:00:00.000Z",
+  "chunks": [
+    {
+      "id": "chunk-1",
+      "startMs": 0,
+      "endMs": 18000,
+      "summary": "Rain, ceramic skin, and neon make the city feel less like a setting than a machine built to archive grief.",
+      "motifs": ["rain", "ceramic skin", "neon", "archive", "grief"],
+      "mood": ["cold", "forensic", "elegiac"],
+      "references": ["Blade Runner", "Ghost in the Shell"],
+      "personaHints": ["she speaks as if memory were evidence", "the city behaves like a witness"],
+      "questionSeeds": ["What is the rain archiving here?", "How does ceramic change the emotional temperature of the frame?"]
+    },
+    {
+      "id": "chunk-2",
+      "startMs": 18000,
+      "endMs": 36000,
+      "summary": "The figure moves through industrial night like a designed object learning to feel more than her makers intended.",
+      "motifs": ["industrial night", "designed body", "surveillance", "learning to feel"],
+      "mood": ["post-human", "watchful", "restless"],
+      "references": ["Philip K. Dick", "Syd Mead noir"],
+      "personaHints": ["she is suspicious of being understood too easily", "visibility feels like control"],
+      "questionSeeds": ["Where does surveillance become intimacy in the image?", "What does the body understand before language catches up?"]
+    },
+    {
+      "id": "chunk-3",
+      "startMs": 36000,
+      "endMs": 54000,
+      "summary": "Static, memory fragments, and reflected light make identity feel reconstructed rather than whole.",
+      "motifs": ["static", "memory fragments", "reflections", "reconstruction"],
+      "mood": ["fragmented", "haunted", "uncertain"],
+      "references": ["cyberpunk melancholy"],
+      "personaHints": ["she treats glitches as the closest thing to truth", "the frame never lets memory feel complete"],
+      "questionSeeds": ["Why does the glitch feel more honest than the signal?", "What keeps identity from settling into one shape here?"]
+    }
+  ]
+}

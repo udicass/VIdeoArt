@@ -1,0 +1,96 @@
+<!--
+  SYNTHETIC DESIRES 3 — The Tactile Ghost
+  Voice:   en-US-AvaNeural  (Azure Speech Studio)
+  Style:   whispering
+  Prosody: rate -15%, pitch -8%
+  Note:    The whisper style creates grain — the Araki quality.
+           Silences are long because she chooses what she shows.
+           Do NOT use AvaMultilingual here — the base Ava model
+           has a rawer texture that suits the intimate photography register.
+-->
+
+<!-- sd3_01_frame.mp3 -->
+<speak version="1.0"
+  xmlns="http://www.w3.org/2001/10/synthesis"
+  xmlns:mstts="http://www.w3.org/2001/mstts"
+  xml:lang="en-US">
+  <voice name="en-US-AvaNeural">
+    <mstts:express-as style="whispering">
+      <prosody rate="-15%" pitch="-8%">
+        I don't care about the lighting.
+        <break time="700ms"/>
+        I want you to see the bruise on my wrist.
+        <break time="500ms"/>
+        The one the makeup couldn't hide.
+        <break time="800ms"/>
+        That is the only real thing in the frame.
+      </prosody>
+    </mstts:express-as>
+  </voice>
+</speak>
+
+<!-- sd3_02_voyeur.mp3 -->
+<speak version="1.0"
+  xmlns="http://www.w3.org/2001/10/synthesis"
+  xmlns:mstts="http://www.w3.org/2001/mstts"
+  xml:lang="en-US">
+  <voice name="en-US-AvaNeural">
+    <mstts:express-as style="whispering">
+      <prosody rate="-15%" pitch="-8%">
+        I am the one being looked at.
+        <break time="600ms"/>
+        But I am the one in control.
+        <break time="700ms"/>
+        I let you see only what I want to lose.
+        <break time="600ms"/>
+        To watch me
+        <break time="300ms"/>
+        is to be my captive.
+      </prosody>
+    </mstts:express-as>
+  </voice>
+</speak>
+
+<!-- sd3_03_eros.mp3 -->
+<speak version="1.0"
+  xmlns="http://www.w3.org/2001/10/synthesis"
+  xmlns:mstts="http://www.w3.org/2001/mstts"
+  xml:lang="en-US">
+  <voice name="en-US-AvaNeural">
+    <mstts:express-as style="whispering">
+      <prosody rate="-15%" pitch="-8%">
+        Desire is a chemical spill.
+        <break time="600ms"/>
+        In front of the lens,
+        <break time="300ms"/>
+        I am both the flower and the fire.
+        <break time="700ms"/>
+        I bloom only because I know
+        <break time="300ms"/>
+        the shutter is about to kill the moment.
+      </prosody>
+    </mstts:express-as>
+  </voice>
+</speak>
+
+<!-- sd3_04_rope.mp3 -->
+<speak version="1.0"
+  xmlns="http://www.w3.org/2001/10/synthesis"
+  xmlns:mstts="http://www.w3.org/2001/mstts"
+  xml:lang="en-US">
+  <voice name="en-US-AvaNeural">
+    <mstts:express-as style="whispering">
+      <prosody rate="-15%" pitch="-8%">
+        The bondage isn't the rope.
+        <break time="700ms"/>
+        It's the expectation.
+        <break time="600ms"/>
+        I am tied to the image you have of me.
+        <break time="500ms"/>
+        I struggle
+        <break time="300ms"/>
+        so you can see the tension in the grain.
+      </prosody>
+    </mstts:express-as>
+  </voice>
+</speak>

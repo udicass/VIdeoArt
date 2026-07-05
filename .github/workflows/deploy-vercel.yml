@@ -1,0 +1,43 @@
+name: Build and Deploy to Vercel
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 18
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build
+        run: npm run build --if-present
+
+      - name: Deploy to Vercel
+        uses: amondnet/vercel-action@v20
+        with:
+          vercel-token: ${{ secrets.VERCEL_TOKEN }}
+          vercel-args: '--prod'
+          working-directory: .
+          vercel-org-id: ${{ secrets.VERCEL_ORG_ID }}
+          vercel-project-id: ${{ secrets.VERCEL_PROJECT_ID }}
+
+# Notes:
+# - Create these repository secrets in GitHub repo Settings → Secrets & variables → Actions:
+#   - VERCEL_TOKEN (personal token from Vercel)
+#   - VERCEL_ORG_ID (found in Vercel dashboard)
+#   - VERCEL_PROJECT_ID (found in Vercel dashboard)
+# - Once pushed, this workflow will run on every push to `main` and deploy the built site to Vercel.

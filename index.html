@@ -1,0 +1,440 @@
+<!-- Build Trigger: 2026-03-24 23:05 -->
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="description"
+    content="Synthetic Desire — Manipulate video and 3D characters with your hands using webcam gesture tracking. Anti-Gravity mode included." />
+  <title>Synthetic Desires — Hand-Controlled Anti-Gravity</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link
+    href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500&display=swap"
+    rel="stylesheet">
+  <link rel="icon" type="image/svg+xml" href="/vite.svg" />
+  <link rel="stylesheet" href="/src/style.css" />
+</head>
+
+<body>
+  <!-- Loading Screen -->
+  <div id="loading-screen">
+    <div class="loader-content">
+      <div class="loader-ring">
+        <div class="ring-segment"></div>
+        <div class="ring-segment"></div>
+        <div class="ring-segment"></div>
+      </div>
+      <h1 class="loader-title">SYNTHETIC <span class="accent">DESIRES</span></h1>
+      <p class="loader-status" id="loader-status">Initializing MediaPipe…</p>
+      <div class="loader-bar">
+        <div class="loader-bar-fill" id="loader-bar-fill"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Main App -->
+  <div id="app" class="hidden">
+    <!-- 3D Canvas (Three.js) -->
+    <canvas id="three-canvas"></canvas>
+
+    <!-- Audio Analyzer Overlay -->
+    <div id="analyzer-overlay" class="hidden">
+      <div class="analyzer-content">
+        <h3 class="analyzer-title">Vocal DNA Analysis</h3>
+        <div class="analyzer-grid">
+          <div class="analyzer-stat">
+            <span class="label">Frequency</span>
+            <span class="value" id="ana-freq">0 Hz</span>
+          </div>
+          <div class="analyzer-stat">
+            <span class="label">Harmonics</span>
+            <span class="value" id="ana-harm">None</span>
+          </div>
+          <div class="analyzer-stat">
+            <span class="label">Timbre</span>
+            <span class="value" id="ana-timbre">Neural</span>
+          </div>
+        </div>
+        <div class="analyzer-graph">
+          <div class="bar" style="height: 60%"></div>
+          <div class="bar" style="height: 80%"></div>
+          <div class="bar" style="height: 40%"></div>
+          <div class="bar" style="height: 90%"></div>
+          <div class="bar" style="height: 50%"></div>
+          <div class="bar" style="height: 70%"></div>
+          <div class="bar" style="height: 30%"></div>
+          <div class="bar" style="height: 85%"></div>
+        </div>
+        <div class="analyzer-status" id="ana-status">Scanning...</div>
+      </div>
+    </div>
+
+    <!-- Webcam Feed (hidden processing) -->
+    <video id="webcam" autoplay playsinline></video>
+
+    <!-- HUD Overlay -->
+    <div id="hud">
+      <!-- Top Bar -->
+      <header id="top-bar">
+        <div class="logo" id="app-logo" title="Synthetic Desire">
+          <span class="logo-icon">✦</span>
+          <span class="logo-text">SYNTHETIC <span class="accent">DESIRES</span></span>
+          <button id="btn-secret-podcast" class="secret-podcast-btn" type="button" title="Secret podcast mode" aria-label="Secret podcast mode">🎙</button>
+          <button id="btn-secret-train" class="secret-train-btn" type="button" title="Secret training" aria-label="Secret training">◈</button>
+          <button id="btn-secret-forge" class="secret-forge-btn" type="button" title="Movie forge" aria-label="Movie forge">✺</button>
+          <span id="public-podcast-ai-timer" class="public-podcast-ai-timer hidden" aria-live="polite">05:00</span>
+        </div>
+        <div class="ai-mode-badge-wrap">
+          <div id="ai-mode-badge" class="ai-mode-badge brain" title="AI Mode">
+            <span class="ai-mode-badge-icon">🧠</span>
+            <span class="ai-mode-badge-label">BRAIN</span>
+            <span class="ai-mode-badge-engine"></span>
+            <span class="ai-mode-badge-mem" id="brain-mem-dot" title="Memories learned from Cloud"></span>
+            <button id="ai-mode-chevron" class="ai-mode-chevron" type="button" title="Show mode details" aria-label="Show mode details">▾</button>
+          </div>
+          <div id="ai-mode-details" class="ai-mode-details hidden">
+            <div class="ai-mode-details-row">
+              <span class="ai-mode-details-k">LIVE</span>
+              <span id="ai-mode-live" class="ai-mode-details-v">BRAIN · DICT</span>
+            </div>
+            <div class="ai-mode-details-row ai-mode-details-flow">
+              <span class="ai-mode-details-k">FLOW</span>
+              <span id="ai-mode-path" class="ai-mode-details-v">CLOUD → LOCAL → DICT</span>
+            </div>
+            <div class="ai-mode-details-row">
+              <span class="ai-mode-details-k">LEVEL</span>
+              <span id="ai-mode-level" class="ai-mode-details-v">L1</span>
+            </div>
+            <div class="ai-mode-details-row">
+              <span class="ai-mode-details-k">USAGE</span>
+              <span id="ai-mode-usage" class="ai-mode-details-v">Loading…</span>
+            </div>
+            <div class="ai-mode-details-divider"></div>
+            <div class="local-backend-toggle" aria-label="Local backend switcher">
+              <button id="local-backend-ollama" class="local-backend-btn active" type="button">Ollama</button>
+            </div>
+            <div class="ai-mode-details-row">
+              <span class="ai-mode-details-k">BACKEND</span>
+              <span id="local-backend-name" class="ai-mode-details-v local-backend-value">Ollama</span>
+            </div>
+            <div class="ai-mode-details-row">
+              <span class="ai-mode-details-k">ROUTE</span>
+              <span id="local-backend-route" class="ai-mode-details-v local-backend-value">Local app</span>
+            </div>
+            <div class="ai-mode-details-row">
+              <span class="ai-mode-details-k">MODEL</span>
+              <span id="local-backend-model" class="ai-mode-details-v local-backend-value">—</span>
+            </div>
+            <div class="ai-mode-details-row ai-mode-details-local-path">
+              <span class="ai-mode-details-k">FILE</span>
+              <span id="local-backend-file" class="ai-mode-details-v local-backend-value">—</span>
+            </div>
+            <div class="ai-mode-details-row ai-mode-details-local-error">
+              <span class="ai-mode-details-k">LAST</span>
+              <span id="local-backend-error" class="ai-mode-details-v local-backend-error">—</span>
+            </div>
+          </div>
+        </div>
+        <div class="status-pills">
+          <div class="pill" id="pill-tracking">
+            <span class="pill-dot"></span>
+            <span>Tracking</span>
+          </div>
+          <div class="pill" id="pill-gravity" role="button" tabindex="0" title="Toggle Anti-Gravity">
+            <span class="pill-dot"></span>
+            <span>Gravity: Normal</span>
+          </div>
+          <div class="pill" id="pill-fps">
+            <span class="pill-dot"></span>
+            <span>60 FPS</span>
+          </div>
+        </div>
+      </header>
+
+      <!-- Webcam Preview (PiP) -->
+      <div id="webcam-pip">
+        <canvas id="webcam-overlay"></canvas>
+        <div class="pip-label">
+          <svg viewBox="0 0 24 24" fill="currentColor" width="12" height="12"><circle cx="12" cy="12" r="5"/></svg>
+          LIVE
+        </div>
+        <button id="btn-toggle-webcam" class="pip-toggle-btn" title="Pause/Resume Camera">⏸</button>
+      </div>
+
+      <!-- Gesture Info -->
+      <div id="gesture-panel">
+        <div class="gesture-icon" id="gesture-icon">🖐️</div>
+        <div class="gesture-info">
+          <span class="gesture-name" id="gesture-name">No Hand Detected</span>
+          <span class="gesture-sub" id="gesture-sub">Show your hand to begin</span>
+        </div>
+      </div>
+
+      <!-- Controls Panel -->
+      <div id="top-video-controls" class="top-player">
+        <button id="btn-shuffle" class="tlp-btn" title="Shuffle">
+          <svg viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round"
+            stroke-linejoin="round" class="feather feather-shuffle">
+            <polyline points="16 3 21 3 21 8"></polyline>
+            <line x1="4" y1="20" x2="21" y2="3"></line>
+            <polyline points="21 16 21 21 16 21"></polyline>
+            <line x1="15" y1="15" x2="21" y2="21"></line>
+            <line x1="4" y1="4" x2="9" y2="9"></line>
+          </svg>
+        </button>
+        <button id="btn-prev-movie" class="tlp-btn" title="Previous">
+          <svg viewBox="0 0 24 24" fill="white" stroke="white" stroke-width="2" stroke-linecap="round"
+            stroke-linejoin="round" class="feather feather-skip-back">
+            <polygon points="19 20 9 12 19 4 19 20"></polygon>
+            <line x1="5" y1="19" x2="5" y2="5"></line>
+          </svg>
+        </button>
+        <button id="btn-play-pause" class="tlp-btn" title="Play/Pause">
+          <svg id="neo-pause-icon" viewBox="0 0 24 24" fill="white" stroke="white" stroke-width="2"
+            stroke-linecap="round" stroke-linejoin="round" class="feather feather-pause" style="display:none;">
+            <rect x="6" y="4" width="4" height="16"></rect>
+            <rect x="14" y="4" width="4" height="16"></rect>
+          </svg>
+          <svg id="neo-play-icon" viewBox="0 0 24 24" fill="white" stroke="white" stroke-width="2"
+            stroke-linecap="round" stroke-linejoin="round" class="feather feather-play">
+            <polygon points="5 3 19 12 5 21 5 3"></polygon>
+          </svg>
+        </button>
+        <button id="btn-next-movie" class="tlp-btn" title="Next">
+          <svg viewBox="0 0 24 24" fill="white" stroke="white" stroke-width="2" stroke-linecap="round"
+            stroke-linejoin="round" class="feather feather-skip-forward">
+            <polygon points="5 4 15 12 5 20 5 4"></polygon>
+            <line x1="19" y1="5" x2="19" y2="19"></line>
+          </svg>
+        </button>
+        <button id="btn-repeat" class="tlp-btn" title="Repeat">
+          <svg viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round"
+            stroke-linejoin="round" class="feather feather-repeat">
+            <polyline points="17 1 21 5 17 9"></polyline>
+            <path d="M3 11V9a4 4 0 0 1 4-4h14"></path>
+            <polyline points="7 23 3 19 7 15"></polyline>
+            <path d="M21 13v2a4 4 0 0 1-4 4H3"></path>
+          </svg>
+        </button>
+      </div>
+    </div>
+    <!-- AI Voice Overlay -->
+    <div id="ai-voice-panel" class="hidden">
+      <div class="ai-speech-bubble" id="ai-speech-bubble">
+        <div class="ai-speech-meta">
+          <span id="ai-speech-mode-chip" class="ai-speech-chip">Free Chat</span>
+          <span id="ai-speech-state-chip" class="ai-speech-chip ai-speech-chip-state hidden">AI</span>
+        </div>
+        <div class="ai-speech-row">
+          <span class="ai-text">Thinking...</span>
+          <div class="ai-wave">
+            <span></span><span></span><span></span><span></span><span></span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- AI Chat (small window) -->
+  <div id="ai-chat-panel">
+    <div class="chat-header">
+      <div class="chat-header-copy">
+        <span class="chat-title">AI Chat</span>
+      </div>
+      <div class="chat-header-controls">
+        <div id="conversation-mode-toggle" class="conversation-mode-toggle hidden" aria-label="Conversation mode switcher">
+          <button id="conversation-mode-chat" class="conversation-mode-btn active" type="button" title="Switch to direct free chat">Free Chat</button>
+          <button id="conversation-mode-podcast" class="conversation-mode-btn" type="button" title="Switch to podcast stage mode">Podcast</button>
+          <button id="ai-mode-split" class="conversation-mode-btn ai-mode-pill-split" title="Split mode — Host A uses Gemini cloud, Host B uses local Gemma">⚡</button>
+        </div>
+        <div class="ai-mode-group" aria-label="AI mode switcher">
+          <button id="ai-mode-brain" class="ai-mode-pill active" title="Switch to Brain mode (local)">Brain</button>
+          <button id="ai-mode-cloud" class="ai-mode-pill" title="Switch to Cloud mode (Gemini AI)">Cloud</button>
+          <button id="ai-mode-gemma" class="ai-mode-pill ai-mode-pill-gemma" title="Force Gemma and bypass cloud failover">Gemma</button>
+        </div>
+      </div>
+    </div>
+      <div class="chat-training-row" aria-label="Training controls">
+        <button id="btn-train-cloud" class="chat-train-btn chat-train-btn-cloud" type="button" title="Train explicitly with Cloud for 5 minutes">Train Cloud</button>
+      <button id="btn-train-gemma-strict" class="chat-train-btn chat-train-btn-gemma" type="button" title="Train with strict Gemma only for 5 minutes. No Cloud or DICT fallback.">Strict Gemma</button>
+      <button id="btn-full-run" class="chat-train-btn chat-train-btn-full-run" type="button" title="Full Run: Train → Podcast → Brain Check">◈ Full Run</button>
+      <button id="btn-story-mode" class="chat-train-btn chat-train-btn-story" type="button" title="Story Mode: Host A asks 2 questions, Muse tells the full scene narrative, saves to brain">◎ Story</button>
+    </div>
+    <div id="ai-chat-messages" class="chat-messages">
+      <div class="chat-msg bot">
+        <b>Neural_Core</b>
+        Synchronizing neural link... Switch to Brain Mode for real-time sensory feedback?
+      </div>
+      <div class="chat-msg user">
+        <b>Player_01</b>
+        Confirmed. Activate Brain Mode. Boost teal luminosity by 20%.
+      </div>
+    </div>
+    <div id="ai-chat-status" class="chat-status">Load a movie to enable chat</div>
+    <div id="ai-key-row" class="key-entry-row hidden">
+      <input id="ai-key-input" type="password" placeholder="Paste Gemini API key (AIza...)" autocomplete="off" />
+      <button id="btn-ai-key-set">🔑 Set Key</button>
+    </div>
+    <!-- Question Suggestions Row -->
+    <div id="ai-suggestions-row" class="ai-suggestions-row hidden">
+      <div id="ai-suggestions-container" class="ai-suggestions-container"></div>
+    </div>
+  </div>
+
+  <!-- Controls -->
+    <div id="controls-panel">
+    <div class="controls-pills-row">
+      <button id="btn-enable-ag-gesture" class="ctrl-pill-btn" title="Enable/Disable Anti-Gravity Gesture" style="display:none">
+        <span class="btn-icon">🖐️</span>
+        <span class="btn-label">AG: OFF</span>
+      </button>
+      <button id="btn-voice-mic" class="ctrl-round-btn huge-cyan" title="Click the mic to enable voice">
+        <svg viewBox="0 0 24 24" fill="none" stroke="black" stroke-width="2" stroke-linecap="round"
+          stroke-linejoin="round" class="feather feather-mic">
+          <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path>
+          <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
+          <line x1="12" y1="19" x2="12" y2="23"></line>
+          <line x1="8" y1="23" x2="16" y2="23"></line>
+        </svg>
+        <span class="btn-label">Speak (tap mic)</span>
+        <span id="voice-mode-chip" class="voice-mode-chip">CHAT</span>
+      </button>
+      <button id="btn-fullscreen" class="ctrl-pill-btn" title="Fullscreen">
+        <span class="btn-icon">⛶</span>
+        <span class="btn-label">FULLSCREEN</span>
+      </button>
+    </div>
+  </div>
+    <div id="center-guide-overlay" class="center-guide-overlay">
+      <div class="center-guide-card">
+        <div class="center-guide-content">
+          <h3>Guide:</h3>
+          <h2>Synthetic Desire Live</h2>
+          <p>Contextual AI suggests questions related to the current video.</p>
+          <p>Click or Talk a suggestion to initiate a free chat or queue a podcast episode.</p>
+        </div>
+        <button id="start-chat-btn" class="start-chat-btn">Start Chat</button>
+      </div>
+    </div>
+
+  <!-- Video Import Dropzone (hidden by default) -->
+  <div id="video-dropzone" class="hidden">
+    <div class="dropzone-content">
+      <div class="dropzone-icon">🎬</div>
+      <h2 class="dropzone-title">Drop Your MP4 Here</h2>
+      <p class="dropzone-sub">or click to browse files</p>
+      <div class="dropzone-formats">Supported: .mp4, .webm, .mov</div>
+      <input type="file" id="video-file-input" accept="video/mp4,video/webm,video/quicktime" />
+    </div>
+    <button id="btn-close-dropzone" class="dropzone-close" title="Close">×</button>
+  </div>
+
+  <!-- PLAYLIST OVERLAY -->
+  <!-- Removed old MOVIE dropdown and playlist overlay for modern player UI -->
+
+
+
+  <!-- VIRTUAL CURSOR -->
+  <div id="virtual-cursor" class="hidden"></div>
+
+  <!-- AI Log Panel -->
+  <div id="ai-log-panel" class="ai-log-panel hidden">
+    <div class="ai-log-header">
+      <span class="ai-log-title">⚙ AI LOG</span>
+      <span id="ai-log-count" class="ai-log-count">0 entries</span>
+      <button id="btn-ai-log-legend" class="ai-log-btn" title="What do DICT L1/L2/L3 mean?">?</button>
+      <button id="btn-ai-log-copy" class="ai-log-btn" title="Copy all log entries">COPY</button>
+      <button id="btn-ai-log-clear" class="ai-log-btn" title="Clear log">CLR</button>
+      <button id="btn-ai-log-close" class="ai-log-btn" title="Close">✕</button>
+    </div>
+
+    <!-- Intelligence Legend -->
+    <div id="ai-log-legend" class="ai-log-legend hidden">
+      <div class="all-legend-title">HOW THE AI THINKS</div>
+
+      <div class="all-legend-section">
+        <div class="all-legend-section-title">ENGINES</div>
+        <div class="all-legend-row">
+          <span class="all-legend-badge cloud">☁️ CLOUD</span>
+          <span class="all-legend-desc">Live Gemini AI — generates a unique response every time. Slowest, smartest.</span>
+        </div>
+        <div class="all-legend-row">
+          <span class="all-legend-badge ollama">🧠 LOCAL</span>
+          <span class="all-legend-desc">Ollama LLM running on your machine — fast, private, offline-capable.</span>
+        </div>
+        <div class="all-legend-row">
+          <span class="all-legend-badge dict">🧠 DICT</span>
+          <span class="all-legend-desc">Dictionary fallback — instant responses from a curated + learned memory bank.</span>
+        </div>
+      </div>
+
+      <div class="all-legend-section">
+        <div class="all-legend-section-title">DICT LEVELS — HOW DEEP THE MEMORY IS</div>
+        <div class="all-legend-row">
+          <span class="all-legend-level l1">L1</span>
+          <span class="all-legend-desc"><strong>Built-in knowledge.</strong> Hand-crafted responses written into this movie's brain at creation. Always available, even on first load.</span>
+        </div>
+        <div class="all-legend-row">
+          <span class="all-legend-level l2">L2</span>
+          <span class="all-legend-desc"><strong>Learned from Cloud.</strong> A response Gemini generated in a past session that was saved to memory. The AI is drawing on something it was taught.</span>
+        </div>
+        <div class="all-legend-row">
+          <span class="all-legend-level l3">L3</span>
+          <span class="all-legend-desc"><strong>Promoted memory.</strong> A cloud-learned response that has been reused and scored highly — it has become part of the AI's permanent character for this film.</span>
+        </div>
+      </div>
+
+      <div class="all-legend-section">
+        <div class="all-legend-section-title">INTENT ROUTING — WHAT THE AI DETECTED</div>
+        <div class="all-legend-row">
+          <span class="all-legend-intent theme">THEME</span>
+          <span class="all-legend-desc">You asked about the story, mood, or visual world of the film.</span>
+        </div>
+        <div class="all-legend-row">
+          <span class="all-legend-intent quote">QUOTE</span>
+          <span class="all-legend-desc">You asked for a line, quote, or specific character dialogue.</span>
+        </div>
+        <div class="all-legend-row">
+          <span class="all-legend-intent reference">REFERENCE</span>
+          <span class="all-legend-desc">You asked about influences, connections, or what inspired the film.</span>
+        </div>
+        <div class="all-legend-row">
+          <span class="all-legend-intent general">GENERAL</span>
+          <span class="all-legend-desc">Open conversation — greetings, reactions, anything outside a specific category.</span>
+        </div>
+      </div>
+
+      <div class="all-legend-section">
+        <div class="all-legend-section-title">VISION</div>
+        <div class="all-legend-row">
+          <span class="all-legend-intent general">👁 VISION</span>
+          <span class="all-legend-desc">The AI was sent the current video frame alongside your message — it could <strong>see</strong> the film when it answered.</span>
+        </div>
+      </div>
+
+      <div class="all-legend-section">
+        <div class="all-legend-section-title">AUDIO</div>
+        <div class="all-legend-row">
+          <span class="all-legend-intent general">🔊 AUDIO</span>
+          <span class="all-legend-desc">The AI was sent the last ~5 s of film audio alongside your message — it could <strong>hear</strong> what was playing when it answered.</span>
+        </div>
+      </div>
+
+      <div class="all-legend-note">The AI always tries CLOUD first. If cloud times out or is unavailable, it falls back through LOCAL → DICT, using the deepest level it can find. 👁 appears when Cloud received a live frame; 🔊 appears when Cloud received live audio.</div>
+    </div>
+
+    <div id="ai-log-entries" class="ai-log-entries">
+      <div class="ai-log-empty">No AI interactions yet. Talk to E.V.A. to see the log.</div>
+    </div>
+  </div>
+
+
+  </div>
+  </div>
+
+  <script type="module" src="/src/main.js"></script>
+</body>
+
+</html>

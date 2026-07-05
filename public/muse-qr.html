@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Muse Card QR</title>
+  <style>
+    body {
+      margin: 0;
+      font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
+      background: #070b14;
+      color: #e5e7eb;
+      padding: 20px;
+    }
+
+    h1 {
+      margin: 0 0 6px;
+      font-size: 1.2rem;
+    }
+
+    .sub {
+      margin-bottom: 16px;
+      color: #9ca3af;
+      font-size: 0.92rem;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+      gap: 14px;
+    }
+
+    .card {
+      background: #0f172a;
+      border: 1px solid #1f2937;
+      border-radius: 14px;
+      padding: 12px;
+    }
+
+    .card h2 {
+      margin: 0 0 8px;
+      font-size: 0.95rem;
+      color: #67e8f9;
+    }
+
+    .imgwrap {
+      background: #fff;
+      border-radius: 10px;
+      padding: 8px;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+    }
+
+    img {
+      width: 100%;
+      max-width: 220px;
+      height: auto;
+      display: block;
+    }
+
+    code {
+      display: block;
+      margin-top: 8px;
+      font-size: 0.7rem;
+      color: #cbd5e1;
+      word-break: break-all;
+    }
+  </style>
+</head>
+
+<body>
+  <h1>Muse Card QR Links</h1>
+  <div class="sub">Scan any QR to open mobile Muse Card mode directly.</div>
+
+  <div class="grid">
+    <article class="card">
+      <h2>Muse Card</h2>
+      <div class="imgwrap"><img src="/qr/muse-card.png" alt="Muse Card QR"></div>
+      <code>https://gesture-3d.vercel.app/?muse=1</code>
+    </article>
+
+    <article class="card">
+      <h2>Muse Card (Cloud)</h2>
+      <div class="imgwrap"><img src="/qr/muse-card-cloud.png" alt="Muse Card Cloud QR"></div>
+      <code>https://gesture-3d.vercel.app/?muse=1&amp;mode=cloud</code>
+    </article>
+
+    <article class="card">
+      <h2>Muse Card (Brain)</h2>
+      <div class="imgwrap"><img src="/qr/muse-card-brain.png" alt="Muse Card Brain QR"></div>
+      <code>https://gesture-3d.vercel.app/?muse=1&amp;mode=brain</code>
+    </article>
+  </div>
+</body>
+
+</html>

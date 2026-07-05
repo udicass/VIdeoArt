@@ -1,0 +1,13 @@
+{
+  "name": "gesture3d-ollama-relay",
+  "version": "1.0.0",
+  "description": "Local HTTPS reverse proxy — forwards https://localhost:11435 to http://localhost:11434 (Ollama)",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "setup": "powershell -ExecutionPolicy Bypass -File setup.ps1"
+  },
+  "engines": {
+    "node": ">=16"
+  }
+}

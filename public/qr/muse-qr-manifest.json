@@ -1,0 +1,27 @@
+{
+  "generatedAt": "2026-03-09T12:05:18.103Z",
+  "baseUrl": "https://gesture-3d.vercel.app",
+  "items": [
+    {
+      "name": "muse-card",
+      "label": "Muse Card",
+      "url": "https://gesture-3d.vercel.app/?muse=1",
+      "svg": "/qr/muse-card.svg",
+      "png": "/qr/muse-card.png"
+    },
+    {
+      "name": "muse-card-cloud",
+      "label": "Muse Card (Cloud)",
+      "url": "https://gesture-3d.vercel.app/?muse=1&mode=cloud",
+      "svg": "/qr/muse-card-cloud.svg",
+      "png": "/qr/muse-card-cloud.png"
+    },
+    {
+      "name": "muse-card-brain",
+      "label": "Muse Card (Brain)",
+      "url": "https://gesture-3d.vercel.app/?muse=1&mode=brain",
+      "svg": "/qr/muse-card-brain.svg",
+      "png": "/qr/muse-card-brain.png"
+    }
+  ]
+}
