@@ -14858,7 +14858,7 @@ const startGestureApp = () => {
     // Add any needed resize logic here
   });
 
-  // Auto-load Play All 3 movies (1,3,4) and start podcast after Shimora Beauty intro plays
+  // Auto-load Play All 3 movies (1,3,4) and start podcast after 5 seconds
   (async () => {
     await new Promise(resolve => {
       const checkReady = () => {
@@ -14878,7 +14878,7 @@ const startGestureApp = () => {
     // Set podcast mode as selected
     if (conversationModePodcast) conversationModePodcast.click();
 
-    // Monitor for video to start playing, then start everything after Shimora Beauty (full intro)
+    // Monitor for video to start playing, then start everything after 5 seconds
     let autoStarted = false;
     const checkVideoPlaying = () => {
       if (autoStarted) return;
@@ -14886,21 +14886,18 @@ const startGestureApp = () => {
       if (videoEl && videoEl.currentTime > 0.5 && !videoEl.paused) {
         autoStarted = true;
 
-        // Start Play All 3 min mode (after ~8s for full Shimora Beauty intro)
+        // Start Play All 3 min mode (after 5s)
         setTimeout(() => {
           window.startMovieContentRotation?.(['test'], {
             intervalSeconds: 180,
             mode: 'play-all-3min',
             movies: ['Synthetic_Desires_1.mp4', 'Synthetic_Desires_3.mp4', 'Synthetic_Desires_4.mp4']
           });
-        }, 8000);
-
-        // Start podcast AI (after ~9s)
-        setTimeout(() => {
+          // Start podcast AI immediately after
           if (publicPodcastAiEnabled && !publicPodcastAiAutoMode) {
             startPublicPodcastAiConversation();
           }
-        }, 9000);
+        }, 5000);
       }
     };
     const playCheckInterval = setInterval(() => {
