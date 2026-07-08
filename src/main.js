@@ -14877,44 +14877,37 @@ const startGestureApp = () => {
     // Set podcast mode as selected
     if (conversationModePodcast) conversationModePodcast.click();
 
-    // Monitor for video to start playing, then start everything after 10 seconds
-    let autoStarted = false;
-    const checkVideoPlaying = () => {
-      if (autoStarted) return;
-      const videoEl = document.querySelector('video');
-      if (videoEl && videoEl.currentTime > 0.5 && !videoEl.paused) {
-        autoStarted = true;
+    // Start everything 10 seconds after app is ready
+    setTimeout(() => {
+      window.startMovieContentRotation?.(['test'], {
+        intervalSeconds: 180,
+        mode: 'play-all-3min',
+        movies: ['Synthetic_Desires_1.mp4', 'Synthetic_Desires_3.mp4', 'Synthetic_Desires_4.mp4']
+      });
 
-        // Start Play All 3 min mode (after 10s)
-        setTimeout(() => {
-          window.startMovieContentRotation?.(['test'], {
-            intervalSeconds: 180,
-            mode: 'play-all-3min',
-            movies: ['Synthetic_Desires_1.mp4', 'Synthetic_Desires_3.mp4', 'Synthetic_Desires_4.mp4']
-          });
+      // Retry until movie audio is actually playing
+      let audioRetries = 0;
+      const audioEnsureInterval = setInterval(() => {
+        audioRetries++;
+        if (bgAudio) {
+          bgAudio.muted = false;
+          bgAudio.volume = 1.0;
+          if (bgAudio.paused && bgAudio.src) {
+            bgAudio.play().catch(() => {});
+          }
+        }
+        if ((bgAudio && !bgAudio.paused) || audioRetries >= 20) {
+          clearInterval(audioEnsureInterval);
+        }
+      }, 500);
 
-          // Ensure bgAudio is playing after movie rotation starts (gives time for source to load)
-          setTimeout(() => {
-            if (bgAudio) {
-              bgAudio.muted = false;
-              bgAudio.volume = 1.0;
-              if (bgAudio.paused) {
-                bgAudio.play().catch(e => console.warn('bgAudio play failed:', e));
-              }
-            }
-            // Start podcast AI
-            if (publicPodcastAiEnabled && !publicPodcastAiAutoMode) {
-              startPublicPodcastAiConversation();
-            }
-          }, 500);
-        }, 10000);
-      }
-    };
-    const playCheckInterval = setInterval(() => {
-      checkVideoPlaying();
-      if (autoStarted) clearInterval(playCheckInterval);
-    }, 200);
-    setTimeout(() => clearInterval(playCheckInterval), 30000);
+      // Start podcast AI shortly after rotation begins
+      setTimeout(() => {
+        if (publicPodcastAiEnabled && !publicPodcastAiAutoMode) {
+          startPublicPodcastAiConversation();
+        }
+      }, 1500);
+    }, 10000);
   })();
 
 }; // End of startGestureApp
