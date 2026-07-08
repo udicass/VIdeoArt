@@ -14887,22 +14887,26 @@ const startGestureApp = () => {
 
         // Start Play All 3 min mode (after 10s)
         setTimeout(() => {
-          // Ensure bgAudio is playing before starting rotation
-          if (bgAudio && bgAudio.paused) {
-            bgAudio.muted = false;
-            bgAudio.volume = 0.7;
-            bgAudio.play().catch(e => console.warn('bgAudio play failed:', e));
-          }
-
           window.startMovieContentRotation?.(['test'], {
             intervalSeconds: 180,
             mode: 'play-all-3min',
             movies: ['Synthetic_Desires_1.mp4', 'Synthetic_Desires_3.mp4', 'Synthetic_Desires_4.mp4']
           });
-          // Start podcast AI immediately after
-          if (publicPodcastAiEnabled && !publicPodcastAiAutoMode) {
-            startPublicPodcastAiConversation();
-          }
+
+          // Ensure bgAudio is playing after movie rotation starts (gives time for source to load)
+          setTimeout(() => {
+            if (bgAudio) {
+              bgAudio.muted = false;
+              bgAudio.volume = 1.0;
+              if (bgAudio.paused) {
+                bgAudio.play().catch(e => console.warn('bgAudio play failed:', e));
+              }
+            }
+            // Start podcast AI
+            if (publicPodcastAiEnabled && !publicPodcastAiAutoMode) {
+              startPublicPodcastAiConversation();
+            }
+          }, 500);
         }, 10000);
       }
     };
