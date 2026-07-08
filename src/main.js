@@ -1173,8 +1173,7 @@ const startGestureApp = () => {
       // Show or hide center guide based on initial chat state
       try {
         if (centerGuideOverlay) {
-          if (aiChatInput && !aiChatInput.disabled) centerGuideOverlay.style.display = 'none';
-          else centerGuideOverlay.style.display = 'flex';
+          centerGuideOverlay.style.display = 'none';
         }
       } catch (e) { /* ignore */ }
 
