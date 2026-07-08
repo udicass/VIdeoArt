@@ -5901,7 +5901,7 @@ const startGestureApp = () => {
     if (!nextMovie) return [];
     const title = formatMovieTitleForPodcast(nextMovie);
     return [
-      { speaker: 'hostA', text: `We are now watching ${title}.` }
+      { speaker: 'hostA', text: `Moving to ${title}.` }
     ];
   }
 
@@ -5942,7 +5942,12 @@ const startGestureApp = () => {
     injectPodcastNarration(handoffLines, { cancelActive: false, prioritize: true, force: true });
     updatePublicPodcastAiButtonState();
     if (!voiceManager?.synthesis?.speaking) {
-      setTimeout(() => drainPodcastNarrationQueue(true), 30);
+      setTimeout(() => {
+        drainPodcastNarrationQueue(true);
+        setTimeout(() => schedulePublicPodcastAiContinue(0), 100);
+      }, 30);
+    } else {
+      setTimeout(() => schedulePublicPodcastAiContinue(0), 100);
     }
   }
 
