@@ -14888,6 +14888,13 @@ const startGestureApp = () => {
 
         // Start Play All 3 min mode (after 10s)
         setTimeout(() => {
+          // Ensure bgAudio is playing before starting rotation
+          if (bgAudio && bgAudio.paused) {
+            bgAudio.muted = false;
+            bgAudio.volume = 0.7;
+            bgAudio.play().catch(e => console.warn('bgAudio play failed:', e));
+          }
+
           window.startMovieContentRotation?.(['test'], {
             intervalSeconds: 180,
             mode: 'play-all-3min',
