@@ -5724,7 +5724,7 @@ body.player-always-visible .top-player {
 /* ── AI Log Panel ─────────────────────────────────────────────────────────── */
 #ai-log-panel {
   position: fixed;
-  left: 24px;
+  right: 24px;
   bottom: 120px;
   width: 380px;
   max-height: 340px;

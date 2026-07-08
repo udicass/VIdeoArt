@@ -36,7 +36,7 @@ function isRetryableModelCapabilityError(status, payload) {
 function isThinkingConfigUnsupported(status, payload) {
     if (status !== 400) return false;
     const text = JSON.stringify(payload || {});
-    return /unknown\s+name\s+"?thinkingconfig"?|cannot\s+find\s+field\s+.*thinking|invalid\s+json\s+payload\s+received/i.test(text);
+    return /unknown\s+name\s+"?thinkingconfig"?|cannot\s+find\s+field\s+.*thinking|invalid\s+json\s+payload\s+received|budget\s+0\s+is\s+invalid|only\s+works\s+in\s+thinking\s+mode|thinking\s+budget/i.test(text);
 }
 
 function isLikelyChatModel(modelName) {

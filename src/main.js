@@ -367,6 +367,7 @@ const startGestureApp = () => {
     pendingPodcastStartReplyLines = [];
     _pendingSplitMuseReplyResult = null;
     _pendingSplitMuseReplyAt = 0;
+    _podcastPrefetch = null;
     _splitMuseAbortController?.abort();
     _splitMuseAbortController = null;
     _lastSplitHostACloudAttemptAt = 0;
@@ -457,7 +458,7 @@ const startGestureApp = () => {
     });
   }
 
-  function schedulePublicPodcastAiContinue(delayMs = isMobile ? 1400 : 900) {
+  function schedulePublicPodcastAiContinue(delayMs = isMobile ? 900 : 500) {
     if (!publicPodcastAiEnabled || !publicPodcastAiAutoMode || publicPodcastAiMovieSwitchPending || publicPodcastAiStartInFlight || brainTrainingInFlight || !voiceManager || !podcastEngine) return;
     clearPublicPodcastAiContinueTimer();
     publicPodcastAiContinueTimer = setTimeout(async () => {
@@ -472,7 +473,7 @@ const startGestureApp = () => {
           delayMs,
           reason: voiceManager?.synthesis?.speaking ? 'speech-busy' : podcastEngine?.viewerInterruptActive ? 'viewer-interrupt' : podcastEngine?.pendingViewerInterrupt ? 'viewer-interrupt-pending' : voiceManager?.micStarting ? 'mic-starting' : 'conversation-busy'
         });
-        schedulePublicPodcastAiContinue(isMobile ? 1700 : 1200);
+        schedulePublicPodcastAiContinue(isMobile ? 1200 : 700);
         updatePublicPodcastAiButtonState();
         return;
       }
@@ -500,7 +501,13 @@ const startGestureApp = () => {
         setInlineActivity('podcast-thinking');
         showBubbleThinking();
         try {
-          nextLines = await buildPublicPodcastAiExchangeLines(nextTurn);
+          if (_podcastPrefetch && _podcastPrefetch.turn === nextTurn && _podcastPrefetch.movie === currentMovie) {
+            nextLines = await _podcastPrefetch.promise;
+            _podcastPrefetch = null;
+          } else {
+            _podcastPrefetch = null;
+            nextLines = await buildPublicPodcastAiExchangeLines(nextTurn);
+          }
         } catch (_err) {
           // cloud failed · fall through to template
         }
@@ -520,7 +527,7 @@ const startGestureApp = () => {
         });
         // Rewind the turn counter because this turn never actually entered the queue.
         publicPodcastAiTurnNumber = Math.max(0, nextTurn - 1);
-        schedulePublicPodcastAiContinue(isMobile ? 1700 : 1200);
+        schedulePublicPodcastAiContinue(isMobile ? 1200 : 700);
         updatePublicPodcastAiButtonState();
         return;
       }
@@ -539,6 +546,13 @@ const startGestureApp = () => {
         reason: 'idle-resume'
       });
       injectPodcastNarration(nextLines, { cancelActive: false, prioritize: true, force: true });
+      // Prefetch the next exchange now, while this turn is being spoken — removes the
+      // cloud-generation gap (~4s) from the silence between turns.
+      _podcastPrefetch = {
+        movie: currentMovie,
+        turn: nextTurn + 1,
+        promise: buildPublicPodcastAiExchangeLines(nextTurn + 1).catch(() => [])
+      };
       updatePublicPodcastAiButtonState();
       if (!voiceManager?.synthesis?.speaking) {
         setTimeout(() => drainPodcastNarrationQueue(true), 30);
@@ -799,6 +813,8 @@ const startGestureApp = () => {
   // Buffer: Split mode Muse local answer that arrived after DICT fast-lane was already served
   let _pendingSplitMuseReplyResult = null;
   let _pendingSplitMuseReplyAt = 0;
+  // Prefetched next podcast exchange · built while the current turn is still speaking
+  let _podcastPrefetch = null;
   // Cloud throttle for split-mode Host A questions · don't hammer Gemini quota on every turn.
   // At most one cloud attempt per SPLIT_HOST_A_CLOUD_MIN_INTERVAL_MS.
   const SPLIT_HOST_A_CLOUD_MIN_INTERVAL_MS = 15_000;
@@ -1176,7 +1192,7 @@ const startGestureApp = () => {
         onIdle: () => {
           if (publicPodcastAiAutoMode && !publicPodcastAiMovieSwitchPending && !publicPodcastAiStartInFlight && !brainTrainingInFlight && !podcastGuestFloorActive && !voiceManager?.isListening && !voiceManager?.micStarting) {
             logPodcastControlEvent('idle', { reason: 'schedule-continue' });
-            schedulePublicPodcastAiContinue(isMobile ? 1800 : 1100);
+            schedulePublicPodcastAiContinue(isMobile ? 900 : 450);
           } else {
             logPodcastControlEvent('idle-hold', {
               reason: publicPodcastAiMovieSwitchPending
@@ -1818,9 +1834,14 @@ const startGestureApp = () => {
         }, 3000);
 
         if (isPodcastSpeech && speechOptions?.speaker === 'hostA' && pendingPodcastStartReplyLines.length) {
-          const deferredStartReplyLines = pendingPodcastStartReplyLines.slice();
-          pendingPodcastStartReplyLines = [];
-          injectPodcastNarration(deferredStartReplyLines, { cancelActive: false, prioritize: true, force: true });
+          // If another Host A question is still queued (e.g. movie-switch handoff spoke first),
+          // keep the deferred Muse answer pending so it plays after its own question, not before.
+          const queueHasPendingHostQuestion = (podcastEngine?.queue || []).some((entry) => entry?.speaker === 'hostA');
+          if (!queueHasPendingHostQuestion) {
+            const deferredStartReplyLines = pendingPodcastStartReplyLines.slice();
+            pendingPodcastStartReplyLines = [];
+            injectPodcastNarration(deferredStartReplyLines, { cancelActive: false, prioritize: true, force: true });
+          }
         }
 
         if (!isPodcastSpeech && podcastGuestPendingResumeDelayMs > 0) {
@@ -1837,7 +1858,7 @@ const startGestureApp = () => {
         if (shouldContinuePodcastNarration) {
           // Natural pause between hosts · gives the impression of a real conversation breath.
           // Longer on mobile to let Android TTS engine settle between utterances.
-          const drainDelay = isMobile ? 1200 : 600;
+          const drainDelay = isMobile ? 900 : 400;
           setTimeout(() => drainPodcastNarrationQueue(true), drainDelay);
         }
         updatePublicPodcastAiButtonState();
@@ -5372,7 +5393,7 @@ const startGestureApp = () => {
       references ? `Reference cues: ${references}.` : '',
       sceneContext ? sceneContext : '',
       'Reply in plain prose only · no verse, no line breaks, no poem format.',
-      'Use 1-2 short complete sentences. Each sentence must finish a thought. No lists. No mention of AI, prompt, engine, or templates.'
+      'Use 1 short complete sentence, 25 words maximum. Finish the thought. No lists. No mention of AI, prompt, engine, or templates.'
     ].filter(Boolean).join('\n');
   }
 
@@ -5429,7 +5450,7 @@ const startGestureApp = () => {
           // matching the same pattern used by background enrichment calls (which reliably succeed).
           const rawText = String(await voiceManager._callGeminiEphemeralPrompt(prompt, {
             temperature: 0.85,
-            maxOutputTokens: 180,
+            maxOutputTokens: 320,
             timeoutMs: PODCAST_GUEST_CLOUD_EXPANSION_TIMEOUT_MS
           }) || '').trim();
           response = String(voiceManager?._normalizeCloudGuestExpansionText?.(rawText) || '').trim();
@@ -5444,7 +5465,8 @@ const startGestureApp = () => {
               audio: false,
               vision: false
             });
-            return null;
+            attempt++;
+            continue;
           }
           if (!recentBlocklist.has(response.toLowerCase())) break;
           voiceManager?.onAiLog?.({
@@ -5879,7 +5901,7 @@ const startGestureApp = () => {
     if (!nextMovie) return [];
     const title = formatMovieTitleForPodcast(nextMovie);
     return [
-      { speaker: 'hostA', text: `We are now watching ${title}. What changes in the mood here?` }
+      { speaker: 'hostA', text: `We are now watching ${title}.` }
     ];
   }
 
@@ -5895,6 +5917,7 @@ const startGestureApp = () => {
     publicPodcastAiMovie = nextMovie;
     publicPodcastAiTurnNumber = 0;
     publicPodcastAiStartInFlight = false;
+    _podcastPrefetch = null;
     podcastTrainingEnabled = true;
 
     // On movie switch: clear per-movie last-line pointers so the new film
@@ -9663,7 +9686,9 @@ const startGestureApp = () => {
   function ensurePodcastQuestionMark(text = '') {
     const normalized = String(text || '').replace(/\s+/g, ' ').trim();
     if (!normalized) return '';
-    return /[?]\s*$/.test(normalized) ? normalized : `${normalized.replace(/[.!]+$/g, '')}?`;
+    // Leave declarative host lines (e.g. movie-switch handoffs) untouched.
+    if (/[.!?]\s*$/.test(normalized)) return normalized;
+    return `${normalized}?`;
   }
 
   function formatPodcastBubbleText(line = null) {
@@ -14037,7 +14062,6 @@ const startGestureApp = () => {
   let movieContentRotationIndex = 0;
   let movieContentRotationBusy = false;
   let movieContentRotationMode = 'interval';
-  let movieContentRotationWaitForAi = false;
   let movieContentRotationPlayAllActive = false;
   let movieContentRotationDirectList = [];
   let movieContentRotationEndedHandler = null;
@@ -14079,7 +14103,6 @@ const startGestureApp = () => {
 
   async function runMovieRotationStep(options = {}) {
     if (movieContentRotationBusy || !movieContentRotationPrompts.length) return;
-    if (movieContentRotationWaitForAi) await waitForPodcastIdle();
     movieContentRotationBusy = true;
     const content = movieContentRotationPrompts[movieContentRotationIndex % movieContentRotationPrompts.length];
     movieContentRotationIndex += 1;
@@ -14128,24 +14151,6 @@ const startGestureApp = () => {
     }
   }
 
-  async function runMovieRotationStepDirect() {
-    if (movieContentRotationBusy || !movieContentRotationDirectList.length) return;
-    if (movieContentRotationWaitForAi) await waitForPodcastIdle();
-    movieContentRotationBusy = true;
-    const movieName = movieContentRotationDirectList[movieContentRotationIndex % movieContentRotationDirectList.length];
-    movieContentRotationIndex += 1;
-    try {
-      await handleVideoFile({ name: movieName });
-      const label = movieName.replace(/\.[^.]+$/, '').replace(/_/g, ' ');
-      appendChatMessage('assistant', `Switched to ${label}.`);
-      showAiSpeech(`Loaded ${label}`, true);
-    } catch (err) {
-      console.error('[MovieRouter] Failed to load movie directly.', err);
-    } finally {
-      movieContentRotationBusy = false;
-    }
-  }
-
   async function changeMovieByContent(content = '', options = {}) {
     const ranked = rankMoviesByContent(content, options?.limit || 5);
     if (!ranked.length) {
@@ -14174,7 +14179,6 @@ const startGestureApp = () => {
       movieContentRotationTimer = null;
     }
     movieContentRotationMode = 'interval';
-    movieContentRotationWaitForAi = false;
     movieContentRotationPlayAllActive = false;
     movieContentRotationDirectList = [];
     detachMovieRotationEndedHandler();

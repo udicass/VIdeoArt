@@ -4296,10 +4296,16 @@ Rules:
         if (!concise) concise = raw;
 
         if (concise.length > maxChars) {
-            let clipped = concise.slice(0, maxChars).trim();
-            clipped = clipped.replace(/[\s,:;\-]+[^\s,:;\-]*$/, '').trim();
-            concise = clipped || concise.slice(0, maxChars).trim();
-            if (concise && !/[.!?]$/.test(concise)) concise += '.';
+            const head = concise.slice(0, maxChars);
+            const lastSentenceEnd = Math.max(head.lastIndexOf('.'), head.lastIndexOf('!'), head.lastIndexOf('?'));
+            if (lastSentenceEnd >= 40) {
+                concise = head.slice(0, lastSentenceEnd + 1).trim();
+            } else {
+                let clipped = head.trim();
+                clipped = clipped.replace(/[\s,:;\-]+[^\s,:;\-]*$/, '').trim();
+                concise = clipped || head.trim();
+                if (concise && !/[.!?]$/.test(concise)) concise += '.';
+            }
         }
 
         return concise;
@@ -4319,7 +4325,7 @@ Rules:
     }
 
     _normalizeCloudGuestExpansionText(text = '') {
-        let normalized = this._condenseReply(text || '', 'cloud', { maxChars: 190, maxSentences: 2 }).trim();
+        let normalized = this._condenseReply(text || '', 'cloud', { maxChars: 220, maxSentences: 1 }).trim();
         if (!normalized) return '';
 
         normalized = normalized.replace(/^["'`]+|["'`]+$/g, '').trim();
@@ -4349,7 +4355,7 @@ Rules:
         // e.g. "...as it." / "borrowed echo of." / "a window the." etc.
         // Pronouns, prepositions, articles, and conjunctions before terminal punctuation
         // are a reliable signal that the model was cut off mid-clause.
-        if (/\b(?:it|they|them|what|that|which|this|those|these|him|her|of|to|in|on|by|with|for|at|from|a|an|the|and|but|or)\s*[.!?]$/i.test(value)) return true;
+        if (/\b(?:it|they|them|what|that|which|this|those|these|him|her|of|to|in|on|by|with|for|at|from|a|an|the|and|but|or|be|been|is|are|was|were)\s*[.!?]$/i.test(value)) return true;
         return false;
     }
 
