@@ -14037,6 +14037,9 @@ const startGestureApp = () => {
   let movieContentRotationIndex = 0;
   let movieContentRotationBusy = false;
   let movieContentRotationMode = 'interval';
+  let movieContentRotationWaitForAi = false;
+  let movieContentRotationPlayAllActive = false;
+  let movieContentRotationDirectList = [];
   let movieContentRotationEndedHandler = null;
   let movieContentRotationPrompts = [...defaultMovieContentRotation];
 
@@ -14045,6 +14048,18 @@ const startGestureApp = () => {
       videoEl.removeEventListener('ended', movieContentRotationEndedHandler);
     }
     movieContentRotationEndedHandler = null;
+  }
+
+  function waitForPodcastIdle(timeoutMs = 30000) {
+    return new Promise(resolve => {
+      const deadline = Date.now() + timeoutMs;
+      function check() {
+        const busy = podcastEngine && (podcastEngine.isSpeaking || (podcastEngine.queue?.length ?? 0) > 0);
+        if (!busy || Date.now() >= deadline) { resolve(); return; }
+        setTimeout(check, 300);
+      }
+      check();
+    });
   }
 
   function syncMovieRotationPlaybackMode(videoEl = scene3d?.getVideoMesh?.()?.videoElement) {
@@ -14064,6 +14079,7 @@ const startGestureApp = () => {
 
   async function runMovieRotationStep(options = {}) {
     if (movieContentRotationBusy || !movieContentRotationPrompts.length) return;
+    if (movieContentRotationWaitForAi) await waitForPodcastIdle();
     movieContentRotationBusy = true;
     const content = movieContentRotationPrompts[movieContentRotationIndex % movieContentRotationPrompts.length];
     movieContentRotationIndex += 1;
@@ -14072,6 +14088,59 @@ const startGestureApp = () => {
       syncMovieRotationPlaybackMode();
     } catch (error) {
       console.error('[MovieRouter] Failed to rotate movie by content.', error);
+    } finally {
+      movieContentRotationBusy = false;
+    }
+  }
+
+  async function runPlayAll3MinLoop(movies) {
+    movieContentRotationPlayAllActive = true;
+    const timePerSlot = Math.floor(180000 / movies.length);
+
+    for (let i = 0; i < movies.length; i++) {
+      if (!movieContentRotationPlayAllActive) break;
+
+      // Load the movie
+      movieContentRotationBusy = true;
+      try {
+        await handleVideoFile({ name: movies[i] });
+        const label = movies[i].replace(/\.[^.]+$/, '').replace(/_/g, ' ');
+        appendChatMessage('assistant', `[${i + 1}/${movies.length}] Switched to ${label}.`);
+        showAiSpeech(`Loaded ${label}`, true);
+      } catch (err) {
+        console.error('[MovieRouter] Failed to load movie directly.', err);
+      } finally {
+        movieContentRotationBusy = false;
+      }
+
+      // Wait for the full time slot
+      await new Promise(resolve => setTimeout(resolve, timePerSlot));
+
+      // After slot ends, wait for AI to finish before switching to next movie
+      if (i < movies.length - 1 && movieContentRotationPlayAllActive) {
+        await waitForPodcastIdle(30000);
+      }
+    }
+
+    if (movieContentRotationPlayAllActive) {
+      movieContentRotationPlayAllActive = false;
+      appendChatMessage('assistant', 'Play All complete — 3 min cycle finished.');
+    }
+  }
+
+  async function runMovieRotationStepDirect() {
+    if (movieContentRotationBusy || !movieContentRotationDirectList.length) return;
+    if (movieContentRotationWaitForAi) await waitForPodcastIdle();
+    movieContentRotationBusy = true;
+    const movieName = movieContentRotationDirectList[movieContentRotationIndex % movieContentRotationDirectList.length];
+    movieContentRotationIndex += 1;
+    try {
+      await handleVideoFile({ name: movieName });
+      const label = movieName.replace(/\.[^.]+$/, '').replace(/_/g, ' ');
+      appendChatMessage('assistant', `Switched to ${label}.`);
+      showAiSpeech(`Loaded ${label}`, true);
+    } catch (err) {
+      console.error('[MovieRouter] Failed to load movie directly.', err);
     } finally {
       movieContentRotationBusy = false;
     }
@@ -14105,6 +14174,9 @@ const startGestureApp = () => {
       movieContentRotationTimer = null;
     }
     movieContentRotationMode = 'interval';
+    movieContentRotationWaitForAi = false;
+    movieContentRotationPlayAllActive = false;
+    movieContentRotationDirectList = [];
     detachMovieRotationEndedHandler();
     syncMovieRotationPlaybackMode();
     movieContentRotationBusy = false;
@@ -14122,22 +14194,37 @@ const startGestureApp = () => {
 
     stopMovieContentRotation();
 
+    const rawMode = String(options?.mode || 'interval').toLowerCase();
+    const isPlayAll3Min = rawMode === 'play-all-3min';
+
+    const directMovies = isPlayAll3Min && Array.isArray(options?.movies) && options.movies.length
+      ? options.movies
+      : [];
+    movieContentRotationDirectList = directMovies;
     movieContentRotationPrompts = items;
-    movieContentRotationMode = String(options?.mode || 'interval').toLowerCase() === 'ended' ? 'ended' : 'interval';
-    const intervalMs = Math.max(5, Number(options?.intervalSeconds || 30)) * 1000;
     movieContentRotationIndex = 0;
 
-    if (options?.immediate !== false) {
-      void runMovieRotationStep(options);
-    }
-
-    if (movieContentRotationMode === 'interval') {
-      movieContentRotationTimer = window.setInterval(() => {
-        void runMovieRotationStep(options);
-      }, intervalMs);
-      appendChatMessage('assistant', `Started content-driven movie rotation every ${Math.round(intervalMs / 1000)} seconds.`);
+    if (isPlayAll3Min && directMovies.length) {
+      // Sequential loop: each movie plays its slot, AI answer finishes, then next movie
+      void runPlayAll3MinLoop(directMovies);
+      const slotSec = Math.round(180000 / directMovies.length / 1000);
+      appendChatMessage('assistant', `Started Play All: ${directMovies.length} movies × ~${slotSec}s = 3 min total. Waits for AI answer before each transition.`);
     } else {
-      appendChatMessage('assistant', 'Started content-driven movie rotation: advance on each movie end.');
+      movieContentRotationMode = (rawMode === 'ended') ? 'ended' : 'interval';
+      const intervalMs = Math.max(5, Number(options?.intervalSeconds || 30)) * 1000;
+
+      if (options?.immediate !== false) {
+        void runMovieRotationStep(options);
+      }
+
+      if (movieContentRotationMode === 'interval') {
+        movieContentRotationTimer = window.setInterval(() => {
+          void runMovieRotationStep(options);
+        }, intervalMs);
+        appendChatMessage('assistant', `Started content-driven movie rotation every ${Math.round(intervalMs / 1000)} seconds.`);
+      } else {
+        appendChatMessage('assistant', 'Started content-driven movie rotation: advance on each movie end.');
+      }
     }
 
     return {
@@ -14156,9 +14243,12 @@ const startGestureApp = () => {
       <div class="movie-rotation-panel__header">Movie Rotation</div>
       <label class="movie-rotation-panel__label" for="movie-rotation-mode">Mode</label>
       <select id="movie-rotation-mode" class="movie-rotation-panel__input">
+        <option value="play-all-3min">Play All · 3 min, finish answer</option>
         <option value="interval">Every N seconds</option>
         <option value="ended">After movie ends</option>
       </select>
+      <label class="movie-rotation-panel__label" id="movie-rotation-movies-label" for="movie-rotation-movies">Movies (e.g. 1,3,4)</label>
+      <input id="movie-rotation-movies" class="movie-rotation-panel__input" type="text" placeholder="1,3,4" value="1,3,4" />
       <label class="movie-rotation-panel__label" for="movie-rotation-interval">Interval (sec)</label>
       <input id="movie-rotation-interval" class="movie-rotation-panel__input" type="number" min="5" step="5" value="30" />
       <label class="movie-rotation-panel__label" for="movie-rotation-prompts">Content Prompts</label>
@@ -14173,9 +14263,18 @@ const startGestureApp = () => {
     const intervalInput = panel.querySelector('#movie-rotation-interval');
     const modeInput = panel.querySelector('#movie-rotation-mode');
     const promptsInput = panel.querySelector('#movie-rotation-prompts');
+    const moviesLabel = panel.querySelector('#movie-rotation-movies-label');
+    const moviesInput = panel.querySelector('#movie-rotation-movies');
     const statusEl = panel.querySelector('[data-role="status"]');
     const startButton = panel.querySelector('[data-action="start"]');
     const stopButton = panel.querySelector('[data-action="stop"]');
+
+    function syncPanelVisibility() {
+      const isPlayAll = modeInput?.value === 'play-all-3min';
+      [moviesLabel, moviesInput].forEach(el => { if (el) el.style.display = isPlayAll ? '' : 'none'; });
+    }
+    syncPanelVisibility();
+    modeInput?.addEventListener('change', syncPanelVisibility);
 
     startButton?.addEventListener('click', () => {
       const prompts = String(promptsInput?.value || '')
@@ -14184,9 +14283,13 @@ const startGestureApp = () => {
         .filter(Boolean);
       const intervalSeconds = Math.max(5, Number(intervalInput?.value || 30));
       const mode = String(modeInput?.value || 'interval').toLowerCase();
-      const result = startMovieContentRotation(prompts, { intervalSeconds, mode });
+      const moviesRaw = String(moviesInput?.value || '');
+      const movies = moviesRaw.split(',').map(s => s.trim()).filter(Boolean).map(n => `Synthetic_Desires_${n}.mp4`);
+      const result = startMovieContentRotation(prompts, { intervalSeconds, mode, movies: movies.length ? movies : undefined });
       statusEl.textContent = result.ok
-        ? (mode === 'ended' ? 'Running until each movie ends' : `Running every ${intervalSeconds}s`)
+        ? (mode === 'play-all-3min' ? `Running: Play All · 3 min, finish answer (movies: ${moviesRaw})`
+          : mode === 'ended' ? 'Running until each movie ends'
+          : `Running every ${intervalSeconds}s`)
         : (result.message || 'Could not start rotation.');
     });
 
