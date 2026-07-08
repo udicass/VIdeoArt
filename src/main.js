@@ -5897,12 +5897,7 @@ const startGestureApp = () => {
   }
 
   function buildPublicPodcastAiMovieChangeLines(movie = '') {
-    const nextMovie = String(movie || voiceManager?.currentMovie || '').trim();
-    if (!nextMovie) return [];
-    const title = formatMovieTitleForPodcast(nextMovie);
-    return [
-      { speaker: 'hostA', text: `Moving to ${title}.` }
-    ];
+    return [];
   }
 
   function resumePublicPodcastAiAfterMovieChange(movie = '') {
@@ -14863,7 +14858,7 @@ const startGestureApp = () => {
     // Add any needed resize logic here
   });
 
-  // Auto-load Play All 3 movies (1,3,4) and start podcast after first movie plays
+  // Auto-load Play All 3 movies (1,3,4) and start podcast after Shimora Beauty intro plays
   (async () => {
     await new Promise(resolve => {
       const checkReady = () => {
@@ -14883,7 +14878,7 @@ const startGestureApp = () => {
     // Set podcast mode as selected
     if (conversationModePodcast) conversationModePodcast.click();
 
-    // Monitor for video to start playing, then start everything after Shimora Beauty intro
+    // Monitor for video to start playing, then start everything after Shimora Beauty (full intro)
     let autoStarted = false;
     const checkVideoPlaying = () => {
       if (autoStarted) return;
@@ -14891,21 +14886,21 @@ const startGestureApp = () => {
       if (videoEl && videoEl.currentTime > 0.5 && !videoEl.paused) {
         autoStarted = true;
 
-        // Start Play All 3 min mode (after ~3s for Shimora Beauty)
+        // Start Play All 3 min mode (after ~8s for full Shimora Beauty intro)
         setTimeout(() => {
           window.startMovieContentRotation?.(['test'], {
             intervalSeconds: 180,
             mode: 'play-all-3min',
             movies: ['Synthetic_Desires_1.mp4', 'Synthetic_Desires_3.mp4', 'Synthetic_Desires_4.mp4']
           });
-        }, 3000);
+        }, 8000);
 
-        // Start podcast AI (after ~4s)
+        // Start podcast AI (after ~9s)
         setTimeout(() => {
           if (publicPodcastAiEnabled && !publicPodcastAiAutoMode) {
             startPublicPodcastAiConversation();
           }
-        }, 4000);
+        }, 9000);
       }
     };
     const playCheckInterval = setInterval(() => {
