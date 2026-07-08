@@ -586,7 +586,7 @@ const startGestureApp = () => {
     }
   }
 
-  const DEFAULT_MOVIE_AUDIO_VOLUME = 0.16;
+  const DEFAULT_MOVIE_AUDIO_VOLUME = 0.7;
 
   // ─── BACKGROUND AUDIO (Synthetic_Desires_1 audio plays under videos 2/3/4) ───
   const MOVIE_CDN_BASE = String(
@@ -14858,7 +14858,7 @@ const startGestureApp = () => {
     // Add any needed resize logic here
   });
 
-  // Auto-load Play All 3 movies (1,3,4) and start podcast after 5 seconds
+  // Auto-load Play All 3 movies (1,3,4) and start podcast after 10 seconds
   (async () => {
     await new Promise(resolve => {
       const checkReady = () => {
@@ -14878,7 +14878,7 @@ const startGestureApp = () => {
     // Set podcast mode as selected
     if (conversationModePodcast) conversationModePodcast.click();
 
-    // Monitor for video to start playing, then start everything after 5 seconds
+    // Monitor for video to start playing, then start everything after 10 seconds
     let autoStarted = false;
     const checkVideoPlaying = () => {
       if (autoStarted) return;
@@ -14886,7 +14886,7 @@ const startGestureApp = () => {
       if (videoEl && videoEl.currentTime > 0.5 && !videoEl.paused) {
         autoStarted = true;
 
-        // Start Play All 3 min mode (after 5s)
+        // Start Play All 3 min mode (after 10s)
         setTimeout(() => {
           window.startMovieContentRotation?.(['test'], {
             intervalSeconds: 180,
@@ -14897,7 +14897,7 @@ const startGestureApp = () => {
           if (publicPodcastAiEnabled && !publicPodcastAiAutoMode) {
             startPublicPodcastAiConversation();
           }
-        }, 5000);
+        }, 10000);
       }
     };
     const playCheckInterval = setInterval(() => {
