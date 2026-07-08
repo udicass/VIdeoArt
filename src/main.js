@@ -1154,7 +1154,7 @@ const startGestureApp = () => {
         }
       });
       
-      // Wire Start Chat button to enable chat and hide the center guide overlay
+      // Wire Start Chat button: enable chat, hide guide, unmute audio, start show
       const startChatBtn = document.getElementById('start-chat-btn');
       const centerGuideOverlay = document.getElementById('center-guide-overlay');
       if (startChatBtn) {
@@ -1162,7 +1162,33 @@ const startGestureApp = () => {
           try {
             setChatEnabled(true, 'Chat active');
             if (centerGuideOverlay) centerGuideOverlay.style.display = 'none';
-            if (aiChatInput && typeof aiChatInput.focus === 'function') aiChatInput.focus();
+
+            // User gesture: unlock movie audio now
+            if (bgAudio) {
+              bgAudio.muted = false;
+              bgAudio.volume = 1.0;
+              if (bgAudio.paused && bgAudio.src) {
+                bgAudio.play().catch(() => {});
+              }
+            }
+
+            // Podcast mode selected
+            if (conversationModePodcast) conversationModePodcast.click();
+
+            // 10 seconds later: Play All rotation + podcast
+            setTimeout(() => {
+              window.startMovieContentRotation?.(['test'], {
+                intervalSeconds: 180,
+                mode: 'play-all-3min',
+                movies: ['Synthetic_Desires_1.mp4', 'Synthetic_Desires_3.mp4', 'Synthetic_Desires_4.mp4']
+              });
+              setTimeout(() => {
+                if (publicPodcastAiEnabled && !publicPodcastAiAutoMode) {
+                  startPublicPodcastAiConversation();
+                }
+              }, 1500);
+            }, 10000);
+
             if (suggestionEngine) suggestionEngine.render();
           } catch (err) {
             console.warn('Start Chat handler error:', err);
@@ -1170,11 +1196,9 @@ const startGestureApp = () => {
         });
       }
 
-      // Show or hide center guide based on initial chat state
+      // Show center guide on load so the user can start the show
       try {
-        if (centerGuideOverlay) {
-          centerGuideOverlay.style.display = 'none';
-        }
+        if (centerGuideOverlay) centerGuideOverlay.style.display = 'flex';
       } catch (e) { /* ignore */ }
 
       // Initialize modular engines after voiceManager is ready
@@ -14856,59 +14880,6 @@ const startGestureApp = () => {
   window.addEventListener('resize', () => {
     // Add any needed resize logic here
   });
-
-  // Auto-load Play All 3 movies (1,3,4) and start podcast after 10 seconds
-  (async () => {
-    await new Promise(resolve => {
-      const checkReady = () => {
-        if (voiceManager?.synthesis) {
-          resolve();
-        } else {
-          setTimeout(checkReady, 100);
-        }
-      };
-      checkReady();
-    });
-
-    // Hide guide overlay immediately
-    const centerGuide = document.getElementById('center-guide-overlay');
-    if (centerGuide) centerGuide.style.display = 'none';
-
-    // Set podcast mode as selected
-    if (conversationModePodcast) conversationModePodcast.click();
-
-    // Start everything 10 seconds after app is ready
-    setTimeout(() => {
-      window.startMovieContentRotation?.(['test'], {
-        intervalSeconds: 180,
-        mode: 'play-all-3min',
-        movies: ['Synthetic_Desires_1.mp4', 'Synthetic_Desires_3.mp4', 'Synthetic_Desires_4.mp4']
-      });
-
-      // Retry until movie audio is actually playing
-      let audioRetries = 0;
-      const audioEnsureInterval = setInterval(() => {
-        audioRetries++;
-        if (bgAudio) {
-          bgAudio.muted = false;
-          bgAudio.volume = 1.0;
-          if (bgAudio.paused && bgAudio.src) {
-            bgAudio.play().catch(() => {});
-          }
-        }
-        if ((bgAudio && !bgAudio.paused) || audioRetries >= 20) {
-          clearInterval(audioEnsureInterval);
-        }
-      }, 500);
-
-      // Start podcast AI shortly after rotation begins
-      setTimeout(() => {
-        if (publicPodcastAiEnabled && !publicPodcastAiAutoMode) {
-          startPublicPodcastAiConversation();
-        }
-      }, 1500);
-    }, 10000);
-  })();
 
 }; // End of startGestureApp
 
