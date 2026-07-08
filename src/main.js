@@ -1165,9 +1165,6 @@ const startGestureApp = () => {
             setChatEnabled(true, 'Chat active');
             if (centerGuideOverlay) centerGuideOverlay.style.display = 'none';
 
-            // Podcast mode selected
-            if (conversationModePodcast) conversationModePodcast.click();
-
             // 1. Start movie 1 now (user gesture → audio allowed)
             if (playlistFiles.length > 0) {
               playMovie(playlistFiles[0], { primeAudioDuringGesture: true })
