@@ -51,7 +51,7 @@ export class Scene3D {
             antialias: true,
             alpha: false,
         });
-        this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+        this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 3));
         this.renderer.setSize(window.innerWidth, window.innerHeight);
         this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
         this.renderer.toneMappingExposure = 1.2;
@@ -60,6 +60,7 @@ export class Scene3D {
 
         // Scene
         this.scene = new THREE.Scene();
+        this.scene.userData.renderer = this.renderer;
         this.scene.fog = new THREE.FogExp2(0x05050a, 0.015);
 
         // Camera
@@ -79,6 +80,7 @@ export class Scene3D {
     _onResize() {
         this.camera.aspect = window.innerWidth / window.innerHeight;
         this.camera.updateProjectionMatrix();
+        this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 3));
         this.renderer.setSize(window.innerWidth, window.innerHeight);
     }
 

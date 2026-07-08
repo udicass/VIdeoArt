@@ -345,7 +345,7 @@ const fragmentShader = /* glsl */ `
     }
 
     // Vignette
-    float vignette = 1.0 - length(vUv - 0.5) * 0.6;
+    float vignette = 1.0 - length(vUv - 0.5) * 0.18;
     videoColor.rgb *= vignette;
 
     // ── AI Gemini Response: Rainbow Glitch ──
@@ -577,8 +577,12 @@ export class VideoMesh {
     this.videoTexture = new THREE.VideoTexture(video);
     this.videoTexture.minFilter = THREE.LinearFilter;
     this.videoTexture.magFilter = THREE.LinearFilter;
+    this.videoTexture.generateMipmaps = false;
     this.videoTexture.format = THREE.RGBAFormat;
     this.videoTexture.colorSpace = THREE.SRGBColorSpace;
+    const renderer = this.scene?.userData?.renderer || null;
+    const maxAnisotropy = renderer?.capabilities?.getMaxAnisotropy?.() || 1;
+    this.videoTexture.anisotropy = Math.min(8, maxAnisotropy);
 
     // Compute the camera's visible viewport at the mesh plane (z=0, camera at z=14)
     // so the plane always fills the screen regardless of video aspect ratio.
@@ -589,35 +593,21 @@ export class VideoMesh {
     const screenAspect = window.innerWidth / window.innerHeight;
     const viewW = viewH * screenAspect;
 
-    // "Cover" on mobile portrait, "Contain" on desktop/tablet
+    // Use "cover" so the movie fills the viewport behind UI overlays,
+    // accepting edge crop instead of side or bottom gutters.
     let planeWidth, planeHeight;
-    const isMobile = window.innerWidth <= 600;
-    if (isMobile) {
-      // Cover: fill the full viewport — crop edges if video aspect differs
-      if (aspect > screenAspect) {
-        // Video is wider than screen → fill height, crop sides
-        planeHeight = viewH;
-        planeWidth = planeHeight * aspect;
-      } else {
-        // Video is taller than screen → fill width, crop top/bottom
-        planeWidth = viewW;
-        planeHeight = planeWidth / aspect;
-      }
-      // Ensure it fully covers (never smaller than viewport)
-      if (planeWidth < viewW) { planeWidth = viewW; planeHeight = planeWidth / aspect; }
-      if (planeHeight < viewH) { planeHeight = viewH; planeWidth = planeHeight * aspect; }
+    if (aspect > screenAspect) {
+      // Video is wider than screen → fill height, crop sides
+      planeHeight = viewH;
+      planeWidth = planeHeight * aspect;
     } else {
-      // Contain: whole video visible, letterbox/pillarbox
-      if (aspect > screenAspect) {
-        // Landscape wider than screen → fill width, letterbox height
-        planeWidth = viewW;
-        planeHeight = planeWidth / aspect;
-      } else {
-        // Portrait taller than screen → fill height, pillarbox width
-        planeHeight = viewH;
-        planeWidth = planeHeight * aspect;
-      }
+      // Video is taller than screen → fill width, crop top/bottom
+      planeWidth = viewW;
+      planeHeight = planeWidth / aspect;
     }
+    // Ensure it fully covers (never smaller than viewport)
+    if (planeWidth < viewW) { planeWidth = viewW; planeHeight = planeWidth / aspect; }
+    if (planeHeight < viewH) { planeHeight = viewH; planeWidth = planeHeight * aspect; }
 
     const segmentsX = 128;
     const segmentsY = Math.round(segmentsX / aspect);

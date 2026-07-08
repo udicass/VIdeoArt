@@ -5342,9 +5342,13 @@ Rules:
 
     async _speakWithGeminiTts(text, options = {}) {
         const ttsConfig = this.currentMovieBrain?.voiceProfile?.geminiTts || {};
-        const stylePrompt = String(ttsConfig.stylePrompt || '').trim();
-        const voice = String(ttsConfig.voice || 'Kore').trim();
-        const language = String(ttsConfig.language || 'fr-FR').trim();
+        const isPodcastMuse = options?.context === 'podcast' && options?.speaker === 'hostB';
+        const stylePrompt = String(
+            ttsConfig.stylePrompt
+            || (isPodcastMuse ? 'Speak as a poised, cinematic female podcast guest. Intimate, articulate, and clearly distinct from the interviewer.' : '')
+        ).trim();
+        const voice = String(ttsConfig.voice || (isPodcastMuse ? 'Dean' : 'Kore')).trim();
+        const language = String(ttsConfig.language || 'en-US').trim();
 
         const speechText = this._normalizeSpeechText(text);
         if (!speechText) return false;
@@ -5447,7 +5451,7 @@ Rules:
         // Internal helper: bypass Gemini TTS checks and speak directly via Web Speech API
         const utterance = new SpeechSynthesisUtterance(speechText);
         const isFemaleSpeaker = options?.speaker === 'hostB' || /muse|female|assistant/i.test(options?.speaker || '');
-        utterance.voice = this._pickReliableVoice({ preferFemale: isFemaleSpeaker }) || this.selectedVoice || null;
+        utterance.voice = options?.voice || this._pickReliableVoice({ preferFemale: isFemaleSpeaker }) || this.selectedVoice || null;
         utterance.pitch = Number.isFinite(options?.pitch) ? options.pitch : this.pitch;
         utterance.rate = Number.isFinite(options?.rate) ? options.rate : this.rate;
         let finished = false;
@@ -5476,8 +5480,10 @@ Rules:
     speak(text, options = {}) {
         // Intercept hostB (Muse) speech when current movie has Gemini TTS enabled
         const isHostB = options?.speaker === 'hostB';
+        const onlyOneUsableVoice = Array.isArray(this.voices) && this.voices.filter(Boolean).length <= 1;
         const geminiTtsEnabled = Boolean(this.currentMovieBrain?.voiceProfile?.geminiTts?.enabled);
-        if (isHostB && geminiTtsEnabled) {
+        const forceDistinctMuseVoice = Boolean(isHostB && options?.context === 'podcast' && onlyOneUsableVoice);
+        if (isHostB && (geminiTtsEnabled || forceDistinctMuseVoice)) {
             // Cancel any active browser TTS before switching to Gemini TTS
             try {
                 if (this.synthesis.speaking || this.synthesis.pending) {

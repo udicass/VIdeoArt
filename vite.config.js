@@ -130,6 +130,8 @@ export default defineConfig(({ mode }) => {
           if (hasLocalGeminiProxy) {
             const geminiHandler = require('./api/gemini.js');
             server.middlewares.use(createApiMiddleware('/api/gemini', geminiHandler, { parseBody: true }));
+            const geminiTtsHandler = require('./api/gemini-tts.js');
+            server.middlewares.use(createApiMiddleware('/api/gemini-tts', geminiTtsHandler, { parseBody: true }));
           }
 
           if (hasLocalKv) {

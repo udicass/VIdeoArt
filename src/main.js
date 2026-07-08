@@ -16,7 +16,7 @@ import { AiEngine } from './core/aiEngine.js';
 import { MemorySynthesizer } from './core/memorySynthesizer.js';
 import { getMemoryCount, saveMemory, loadMemories } from './brainMemory.js';
 import { getAvailableLocalLlmBackends, getLocalLlmBackend, getLocalLlmStatus, isOllamaHttpsBlocked, refreshLocalLlmStatus, setLocalLlmBackend } from './ollamaClient.js';
-import { resolveMovieBrain } from './movieBrains.js';
+import { movieBrains, resolveMovieBrain } from './movieBrains.js';
 import { buildMovieForgePack, formatMovieForgePromptText } from './movieForge.js';
 import { getMovieRetrievalContext } from './movieSceneRetrieval.js';
 
@@ -639,6 +639,7 @@ const startGestureApp = () => {
   let lastBubbleQuestionAt = 0;
   let _activeSpeechFullText = '';
   let _activeSpeechPrefix = '';
+  let _activeSpeechLiveReveal = true;
   let fpsFrames = 0;
   let fpsTime = 0;
   let currentFps = 60;
@@ -1168,7 +1169,10 @@ const startGestureApp = () => {
         voiceManager,
         isMobile,
         pickVoiceProfiles: () => podcastVoiceProfiles,
-        onChatLine: (next) => appendPodcastNarrationChatLine(next),
+        onChatLine: (next) => {
+          appendPodcastNarrationChatLine(next);
+          showPodcastBubbleLine(next);
+        },
         onIdle: () => {
           if (publicPodcastAiAutoMode && !publicPodcastAiMovieSwitchPending && !publicPodcastAiStartInFlight && !brainTrainingInFlight && !podcastGuestFloorActive && !voiceManager?.isListening && !voiceManager?.micStarting) {
             logPodcastControlEvent('idle', { reason: 'schedule-continue' });
@@ -1707,12 +1711,13 @@ const startGestureApp = () => {
         // Switch bubble from thinking ? live word-reveal
         _activeSpeechFullText = String(aiText?.textContent || '').trim();
         _activeSpeechPrefix = '';
+        _activeSpeechLiveReveal = !isPodcastSpeech;
         const answerMarker = '\nA: ';
         const answerMarkerIndex = _activeSpeechFullText.indexOf(answerMarker);
         if (answerMarkerIndex >= 0) {
           _activeSpeechPrefix = _activeSpeechFullText.slice(0, answerMarkerIndex + answerMarker.length);
         }
-        if (_activeSpeechFullText) {
+        if (_activeSpeechFullText && _activeSpeechLiveReveal) {
           safeSetText(aiText, _activeSpeechPrefix);
         }
         aiSpeechBubble?.classList.remove('thinking');
@@ -1766,6 +1771,7 @@ const startGestureApp = () => {
 
       voiceManager.onSpeakWord = (fullText, charIndex, charLength) => {
         if (!aiText) return;
+        if (!_activeSpeechLiveReveal) return;
         safeSetText(aiText, `${_activeSpeechPrefix}${fullText.slice(0, charIndex + (charLength || 1))}`);
       };
 
@@ -1790,6 +1796,7 @@ const startGestureApp = () => {
         }
         _activeSpeechFullText = '';
         _activeSpeechPrefix = '';
+        _activeSpeechLiveReveal = true;
         aiSpeechBubble?.classList.remove('speaking', 'thinking');
         // Stop breathing visualizer
         visualizer.stop();
@@ -5872,7 +5879,7 @@ const startGestureApp = () => {
     if (!nextMovie) return [];
     const title = formatMovieTitleForPodcast(nextMovie);
     return [
-      { speaker: 'hostA', text: `Moving on: we are now watching ${title}.` }
+      { speaker: 'hostA', text: `We are now watching ${title}. What changes in the mood here?` }
     ];
   }
 
@@ -7699,8 +7706,8 @@ const startGestureApp = () => {
 
   function pickPodcastVoiceProfiles() {
     // Host A: measured interviewer pace. Host B: per-film voice character from movieBrains voiceProfile.
-    const hostAPitch = 0.95;   // Warm natural female tone
-    const hostARate = 0.93;    // Natural interviewer speed
+    const hostAPitch = 0.9;    // Slightly lower so Host A separates from Muse more clearly
+    const hostARate = 0.91;    // Measured interviewer cadence
 
     // Pull per-film pitch/rate from the loaded movie brain's voiceProfile
     const movieVP = voiceManager?.currentMovieBrain?.voiceProfile || {};
@@ -7713,8 +7720,8 @@ const startGestureApp = () => {
 
     if (!voiceManager?.voices?.length) {
       podcastVoiceProfiles = {
-        hostA: { voice: null, pitch: hostAPitch, rate: hostARate },
-        hostB: { voice: null, pitch: hostBPitch, rate: hostBRate }
+        hostA: { voice: null, pitch: 0.86, rate: 0.9 },
+        hostB: { voice: null, pitch: 1.14, rate: 0.98 }
       };
       return podcastVoiceProfiles;
     }
@@ -7831,9 +7838,9 @@ const startGestureApp = () => {
 
     podcastVoiceProfiles = {
       // Host A (interviewer): warm female voice, not too deep (0.95 is the sweet spot)
-      hostA: { voice: interviewer, pitch: forceDifferentiate ? (isMaleA ? 1.3 : 0.95) : Math.max(0.95, hostAPitch), rate: hostARate, preferDefault: !!priorHostA?.preferDefault },
+      hostA: { voice: interviewer, pitch: forceDifferentiate ? (isMaleA ? 1.28 : 0.86) : Math.max(0.86, hostAPitch), rate: forceDifferentiate ? 0.9 : hostARate, preferDefault: !!priorHostA?.preferDefault },
       // Host B (Muse): per-film pitch/rate from movieBrains voiceProfile; voice biased by voiceHints
-      hostB: { voice: museVoice, pitch: forceDifferentiate ? (isMaleB ? 1.5 : hostBPitch) : hostBPitch, rate: hostBRate, preferDefault: !!priorHostB?.preferDefault },
+      hostB: { voice: museVoice, pitch: forceDifferentiate ? (isMaleB ? 1.46 : Math.max(1.12, hostBPitch)) : hostBPitch, rate: forceDifferentiate ? Math.max(0.96, hostBRate) : hostBRate, preferDefault: !!priorHostB?.preferDefault },
       // Viewer: pill-input voice · deliberately distinct pitch/rate from both hosts
       viewer: { voice: viewerVoice, pitch: 0.78, rate: 1.05, preferDefault: false },
       // Track which film these profiles were built for (used by cache-bust logic above)
@@ -9648,9 +9655,39 @@ const startGestureApp = () => {
   }
 
   function formatPodcastChatLabel(speaker = 'hostA') {
-    if (speaker === 'hostB') return getPodcastMuseName();
+    if (speaker === 'hostB') return `${getPodcastMuseName()} ✦`;
     if (speaker === 'viewer') return 'You';
     return 'Host A';
+  }
+
+  function ensurePodcastQuestionMark(text = '') {
+    const normalized = String(text || '').replace(/\s+/g, ' ').trim();
+    if (!normalized) return '';
+    return /[?]\s*$/.test(normalized) ? normalized : `${normalized.replace(/[.!]+$/g, '')}?`;
+  }
+
+  function formatPodcastBubbleText(line = null) {
+    const text = String(line?.text || '').trim();
+    if (!text) return '';
+    const speaker = String(line?.speaker || 'hostA');
+    if (speaker === 'hostB') {
+      return `${getPodcastMuseName()} ✦ ${text}`;
+    }
+    if (speaker === 'hostA') {
+      return ensurePodcastQuestionMark(text);
+    }
+    return text;
+  }
+
+  function showPodcastBubbleLine(line = null) {
+    const bubbleLine = formatPodcastBubbleText(line);
+    if (!bubbleLine) return;
+    showAiSpeech(bubbleLine, true, {
+      speaker: line?.speaker || 'hostA',
+      forceDisplay: true,
+      disableQuestionAnswerPairing: true,
+      context: 'podcast'
+    });
   }
 
   function appendPodcastNarrationChatLine(line = null) {
@@ -9658,8 +9695,11 @@ const startGestureApp = () => {
     if (!text) return;
     // Viewer lines are already shown as user messages by the pill click handler — skip duplicate
     if (line?.speaker === 'viewer') return;
-    const label = formatPodcastChatLabel(line?.speaker || 'hostA');
-    const message = `${label} · ${text}`;
+    const baseLabel = formatPodcastChatLabel(line?.speaker || 'hostA');
+    const isHostAQuestion = String(line?.speaker || 'hostA') === 'hostA';
+    const label = isHostAQuestion ? `${baseLabel} ?` : baseLabel;
+    const messageText = isHostAQuestion ? ensurePodcastQuestionMark(text) : text;
+    const message = `${label} · ${messageText}`;
     if (message === lastPodcastChatLine) return;
     lastPodcastChatLine = message;
     const hasStructuredLog = !!line?.logMeta && typeof appendAiLog === 'function' && !line.logMeta.suppressAiLog;
@@ -13679,15 +13719,10 @@ const startGestureApp = () => {
       const info = await scene3d.loadVideo(source);
       console.log('Video loaded:', info);
 
-      // Per-movie display tuning:
-      // SD2 is 1920×1080 but encodes different content → scale down slightly.
-      // All others display at natural size (videoMesh._createMesh handles aspect).
-      // No more per-video stretch · let the mesh "contain" logic handle it.
+      // Keep all movies at the mesh's computed fill size.
       const vmAfterLoad = scene3d.getVideoMesh();
       if (vmAfterLoad?.mesh) {
-        const isSd2 = /synthetic_desires_2/i.test(movieFileName);
-        const displayScale = isSd2 ? 0.75 : 1.0;
-        vmAfterLoad.mesh.scale.set(displayScale, displayScale, displayScale);
+        vmAfterLoad.mesh.scale.set(1, 1, 1);
       }
 
       // Generate and display question suggestions for the movie
@@ -13924,6 +13959,250 @@ const startGestureApp = () => {
       alert(`Failed to load video. ${message}`);
     }
   }
+
+  function normalizeMovieRouterText(value = '') {
+    return String(value || '')
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
+
+  function tokenizeMovieRouterText(value = '') {
+    return normalizeMovieRouterText(value)
+      .split(' ')
+      .map(token => token.trim())
+      .filter(token => token.length >= 3);
+  }
+
+  function buildMovieContentCorpus(movieName = '') {
+    const brain = resolveMovieBrain(movieName) || {};
+    const dictionaryValues = Object.values(brain?.dictionary || {}).flatMap((value) => Array.isArray(value) ? value : [value]);
+    const segments = [
+      movieName.replace(/\.[^.]+$/, '').replace(/_/g, ' '),
+      brain?.theme,
+      brain?.notebookContext,
+      brain?.fallbackPersonality,
+      brain?.persona?.tone,
+      ...(brain?.persona?.obsessions || []),
+      ...(brain?.trainingSeeds?.themes || []),
+      ...(brain?.trainingSeeds?.references || []),
+      ...(brain?.trainingSeeds?.story || []),
+      ...(brain?.trainingSeeds?.symbols || []),
+      ...Object.keys(brain?.dictionary || {}),
+      ...dictionaryValues,
+    ];
+    return normalizeMovieRouterText(segments.filter(Boolean).join(' '));
+  }
+
+  function rankMoviesByContent(content = '', limit = 5) {
+    const normalizedContent = normalizeMovieRouterText(content);
+    const tokens = tokenizeMovieRouterText(content);
+    if (!normalizedContent || !tokens.length) return [];
+
+    return Object.keys(movieBrains)
+      .map((movieName) => {
+        const corpus = buildMovieContentCorpus(movieName);
+        let score = 0;
+        const matchedTokens = [];
+
+        for (const token of tokens) {
+          if (!corpus.includes(token)) continue;
+          matchedTokens.push(token);
+          const occurrences = corpus.split(token).length - 1;
+          score += 2 + Math.min(occurrences, 4);
+        }
+
+        if (corpus.includes(normalizedContent)) score += 8;
+
+        return {
+          movieName,
+          score,
+          matchedTokens: Array.from(new Set(matchedTokens)).slice(0, 8),
+        };
+      })
+      .filter((entry) => entry.score > 0)
+      .sort((left, right) => right.score - left.score)
+      .slice(0, Math.max(1, Number(limit || 1)));
+  }
+
+  const defaultMovieContentRotation = [
+    'poor image neon archive retro future decay',
+    'fashion luxury gaze runway beauty capitalism',
+    'surveillance identity machine exam synthetic body',
+    'desire ritual memory dream collapse cinematic myth',
+  ];
+
+  let movieContentRotationTimer = null;
+  let movieContentRotationIndex = 0;
+  let movieContentRotationBusy = false;
+  let movieContentRotationMode = 'interval';
+  let movieContentRotationEndedHandler = null;
+  let movieContentRotationPrompts = [...defaultMovieContentRotation];
+
+  function detachMovieRotationEndedHandler(videoEl = scene3d?.getVideoMesh?.()?.videoElement) {
+    if (videoEl && movieContentRotationEndedHandler) {
+      videoEl.removeEventListener('ended', movieContentRotationEndedHandler);
+    }
+    movieContentRotationEndedHandler = null;
+  }
+
+  function syncMovieRotationPlaybackMode(videoEl = scene3d?.getVideoMesh?.()?.videoElement) {
+    if (!videoEl) return;
+    detachMovieRotationEndedHandler(videoEl);
+    if (movieContentRotationMode === 'ended') {
+      videoEl.loop = false;
+      movieContentRotationEndedHandler = () => {
+        if (movieContentRotationBusy || !movieContentRotationPrompts.length) return;
+        void runMovieRotationStep({ trigger: 'ended' });
+      };
+      videoEl.addEventListener('ended', movieContentRotationEndedHandler);
+      return;
+    }
+    videoEl.loop = true;
+  }
+
+  async function runMovieRotationStep(options = {}) {
+    if (movieContentRotationBusy || !movieContentRotationPrompts.length) return;
+    movieContentRotationBusy = true;
+    const content = movieContentRotationPrompts[movieContentRotationIndex % movieContentRotationPrompts.length];
+    movieContentRotationIndex += 1;
+    try {
+      await changeMovieByContent(content, options);
+      syncMovieRotationPlaybackMode();
+    } catch (error) {
+      console.error('[MovieRouter] Failed to rotate movie by content.', error);
+    } finally {
+      movieContentRotationBusy = false;
+    }
+  }
+
+  async function changeMovieByContent(content = '', options = {}) {
+    const ranked = rankMoviesByContent(content, options?.limit || 5);
+    if (!ranked.length) {
+      return { ok: false, message: 'No movie matched that content.', ranked: [] };
+    }
+
+    const bestMatch = ranked[0];
+    await handleVideoFile({ name: bestMatch.movieName }, options);
+
+    const label = bestMatch.movieName.replace(/\.[^.]+$/, '').replace(/_/g, ' ');
+    const why = bestMatch.matchedTokens.length ? `Matched: ${bestMatch.matchedTokens.join(', ')}` : 'Matched by overall context.';
+    appendChatMessage('assistant', `Switched movie to ${label}. ${why}`);
+    showAiSpeech(`Loaded ${label}`, true);
+
+    return {
+      ok: true,
+      movieName: bestMatch.movieName,
+      ranked,
+      matchedTokens: bestMatch.matchedTokens,
+    };
+  }
+
+  function stopMovieContentRotation() {
+    if (movieContentRotationTimer) {
+      window.clearInterval(movieContentRotationTimer);
+      movieContentRotationTimer = null;
+    }
+    movieContentRotationMode = 'interval';
+    detachMovieRotationEndedHandler();
+    syncMovieRotationPlaybackMode();
+    movieContentRotationBusy = false;
+    return { ok: true, running: false };
+  }
+
+  function startMovieContentRotation(contentInputs = defaultMovieContentRotation, options = {}) {
+    const items = (Array.isArray(contentInputs) ? contentInputs : [contentInputs])
+      .map(value => String(value || '').trim())
+      .filter(Boolean);
+
+    if (!items.length) {
+      return { ok: false, message: 'Provide at least one content prompt.' };
+    }
+
+    stopMovieContentRotation();
+
+    movieContentRotationPrompts = items;
+    movieContentRotationMode = String(options?.mode || 'interval').toLowerCase() === 'ended' ? 'ended' : 'interval';
+    const intervalMs = Math.max(5, Number(options?.intervalSeconds || 30)) * 1000;
+    movieContentRotationIndex = 0;
+
+    if (options?.immediate !== false) {
+      void runMovieRotationStep(options);
+    }
+
+    if (movieContentRotationMode === 'interval') {
+      movieContentRotationTimer = window.setInterval(() => {
+        void runMovieRotationStep(options);
+      }, intervalMs);
+      appendChatMessage('assistant', `Started content-driven movie rotation every ${Math.round(intervalMs / 1000)} seconds.`);
+    } else {
+      appendChatMessage('assistant', 'Started content-driven movie rotation: advance on each movie end.');
+    }
+
+    return {
+      ok: true,
+      running: true,
+      intervalSeconds: intervalMs / 1000,
+      mode: movieContentRotationMode,
+      prompts: items,
+    };
+  }
+
+  function createMovieRotationPanel() {
+    const panel = document.createElement('section');
+    panel.className = 'movie-rotation-panel';
+    panel.innerHTML = `
+      <div class="movie-rotation-panel__header">Movie Rotation</div>
+      <label class="movie-rotation-panel__label" for="movie-rotation-mode">Mode</label>
+      <select id="movie-rotation-mode" class="movie-rotation-panel__input">
+        <option value="interval">Every N seconds</option>
+        <option value="ended">After movie ends</option>
+      </select>
+      <label class="movie-rotation-panel__label" for="movie-rotation-interval">Interval (sec)</label>
+      <input id="movie-rotation-interval" class="movie-rotation-panel__input" type="number" min="5" step="5" value="30" />
+      <label class="movie-rotation-panel__label" for="movie-rotation-prompts">Content Prompts</label>
+      <textarea id="movie-rotation-prompts" class="movie-rotation-panel__textarea" rows="5">${defaultMovieContentRotation.join('\n')}</textarea>
+      <div class="movie-rotation-panel__actions">
+        <button type="button" class="movie-rotation-panel__button" data-action="start">Start</button>
+        <button type="button" class="movie-rotation-panel__button movie-rotation-panel__button--secondary" data-action="stop">Stop</button>
+      </div>
+      <div class="movie-rotation-panel__status" data-role="status">Idle</div>
+    `;
+
+    const intervalInput = panel.querySelector('#movie-rotation-interval');
+    const modeInput = panel.querySelector('#movie-rotation-mode');
+    const promptsInput = panel.querySelector('#movie-rotation-prompts');
+    const statusEl = panel.querySelector('[data-role="status"]');
+    const startButton = panel.querySelector('[data-action="start"]');
+    const stopButton = panel.querySelector('[data-action="stop"]');
+
+    startButton?.addEventListener('click', () => {
+      const prompts = String(promptsInput?.value || '')
+        .split(/\r?\n/)
+        .map(line => line.trim())
+        .filter(Boolean);
+      const intervalSeconds = Math.max(5, Number(intervalInput?.value || 30));
+      const mode = String(modeInput?.value || 'interval').toLowerCase();
+      const result = startMovieContentRotation(prompts, { intervalSeconds, mode });
+      statusEl.textContent = result.ok
+        ? (mode === 'ended' ? 'Running until each movie ends' : `Running every ${intervalSeconds}s`)
+        : (result.message || 'Could not start rotation.');
+    });
+
+    stopButton?.addEventListener('click', () => {
+      stopMovieContentRotation();
+      statusEl.textContent = 'Stopped';
+    });
+
+    document.body.appendChild(panel);
+  }
+
+  window.changeMovieByContent = changeMovieByContent;
+  window.rankMoviesByContent = rankMoviesByContent;
+  window.startMovieContentRotation = startMovieContentRotation;
+  window.stopMovieContentRotation = stopMovieContentRotation;
+  createMovieRotationPanel();
 
   // ─── EVENT LISTENERS ───
 
@@ -14280,7 +14559,7 @@ const startGestureApp = () => {
     const normalizedSpeechText = typeof text === 'string'
       ? text.replace(/^\?\?\s+/, '')
       : text;
-    const bubbleText = isRobot
+    const bubbleText = !options?.disableQuestionAnswerPairing && isRobot
       && lastBubbleQuestionText
       && typeof normalizedSpeechText === 'string'
       && (Date.now() - lastBubbleQuestionAt) < 30000
