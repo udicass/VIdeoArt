@@ -14876,32 +14876,41 @@ const startGestureApp = () => {
       checkReady();
     });
 
-    // Start Play All 3 min mode with movies 1, 3, 4
-    setTimeout(() => {
-      window.startMovieContentRotation?.(['test'], {
-        intervalSeconds: 180,
-        mode: 'play-all-3min',
-        movies: ['Synthetic_Desires_1.mp4', 'Synthetic_Desires_3.mp4', 'Synthetic_Desires_4.mp4']
-      });
-    }, 500);
+    // Hide guide overlay immediately
+    const centerGuide = document.getElementById('center-guide-overlay');
+    if (centerGuide) centerGuide.style.display = 'none';
 
-    // Monitor for video to start playing, then start podcast after movie intro
-    let podcastStarted = false;
+    // Set podcast mode as selected
+    if (conversationModePodcast) conversationModePodcast.click();
+
+    // Monitor for video to start playing, then start everything after Shimora Beauty intro
+    let autoStarted = false;
     const checkVideoPlaying = () => {
-      if (podcastStarted) return;
+      if (autoStarted) return;
       const videoEl = document.querySelector('video');
-      if (videoEl && videoEl.currentTime > 0 && !videoEl.paused) {
-        podcastStarted = true;
+      if (videoEl && videoEl.currentTime > 0.5 && !videoEl.paused) {
+        autoStarted = true;
+
+        // Start Play All 3 min mode (after ~3s for Shimora Beauty)
+        setTimeout(() => {
+          window.startMovieContentRotation?.(['test'], {
+            intervalSeconds: 180,
+            mode: 'play-all-3min',
+            movies: ['Synthetic_Desires_1.mp4', 'Synthetic_Desires_3.mp4', 'Synthetic_Desires_4.mp4']
+          });
+        }, 3000);
+
+        // Start podcast AI (after ~4s)
         setTimeout(() => {
           if (publicPodcastAiEnabled && !publicPodcastAiAutoMode) {
             startPublicPodcastAiConversation();
           }
-        }, 3000);
+        }, 4000);
       }
     };
     const playCheckInterval = setInterval(() => {
       checkVideoPlaying();
-      if (podcastStarted) clearInterval(playCheckInterval);
+      if (autoStarted) clearInterval(playCheckInterval);
     }, 200);
     setTimeout(() => clearInterval(playCheckInterval), 30000);
   })();
