@@ -4281,7 +4281,7 @@ Rules:
 
         const maxChars = Number.isFinite(options?.maxChars)
             ? Math.max(40, Math.floor(options.maxChars))
-            : (mode === 'brain' ? 170 : 220);
+            : (mode === 'brain' ? 170 : 280);
         const maxSentences = Number.isFinite(options?.maxSentences)
             ? Math.max(1, Math.floor(options.maxSentences))
             : (mode === 'brain' ? 2 : 3);
@@ -4325,7 +4325,7 @@ Rules:
     }
 
     _normalizeCloudGuestExpansionText(text = '') {
-        let normalized = this._condenseReply(text || '', 'cloud', { maxChars: 220, maxSentences: 1 }).trim();
+        let normalized = this._condenseReply(text || '', 'cloud', { maxChars: 280, maxSentences: 1 }).trim();
         if (!normalized) return '';
 
         normalized = normalized.replace(/^["'`]+|["'`]+$/g, '').trim();
