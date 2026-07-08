@@ -14145,17 +14145,21 @@ const startGestureApp = () => {
     for (let i = 0; i < movies.length; i++) {
       if (!movieContentRotationPlayAllActive) break;
 
-      // Load the movie
-      movieContentRotationBusy = true;
-      try {
-        await handleVideoFile({ name: movies[i] });
-        const label = movies[i].replace(/\.[^.]+$/, '').replace(/_/g, ' ');
-        appendChatMessage('assistant', `[${i + 1}/${movies.length}] Switched to ${label}.`);
-        showAiSpeech(`Loaded ${label}`, true);
-      } catch (err) {
-        console.error('[MovieRouter] Failed to load movie directly.', err);
-      } finally {
-        movieContentRotationBusy = false;
+      // Load the movie (skip reload if it's already the one playing)
+      const alreadyPlaying = i === 0
+        && String(voiceManager?.currentMovie || '').trim().toLowerCase() === String(movies[i] || '').trim().toLowerCase();
+      if (!alreadyPlaying) {
+        movieContentRotationBusy = true;
+        try {
+          await handleVideoFile({ name: movies[i] });
+          const label = movies[i].replace(/\.[^.]+$/, '').replace(/_/g, ' ');
+          appendChatMessage('assistant', `[${i + 1}/${movies.length}] Switched to ${label}.`);
+          showAiSpeech(`Loaded ${label}`, true);
+        } catch (err) {
+          console.error('[MovieRouter] Failed to load movie directly.', err);
+        } finally {
+          movieContentRotationBusy = false;
+        }
       }
 
       // Wait for the full time slot
