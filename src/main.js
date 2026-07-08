@@ -1154,7 +1154,9 @@ const startGestureApp = () => {
         }
       });
       
-      // Wire Start Chat button: enable chat, hide guide, unmute audio, start show
+      // Start Chat button triggers everything:
+      // 1. Play movie 1 with sound for 10 seconds
+      // 2. Then start Play All 3 min mode + podcast AI
       const startChatBtn = document.getElementById('start-chat-btn');
       const centerGuideOverlay = document.getElementById('center-guide-overlay');
       if (startChatBtn) {
@@ -1163,19 +1165,25 @@ const startGestureApp = () => {
             setChatEnabled(true, 'Chat active');
             if (centerGuideOverlay) centerGuideOverlay.style.display = 'none';
 
-            // User gesture: unlock movie audio now
-            if (bgAudio) {
-              bgAudio.muted = false;
-              bgAudio.volume = 1.0;
-              if (bgAudio.paused && bgAudio.src) {
-                bgAudio.play().catch(() => {});
-              }
-            }
-
             // Podcast mode selected
             if (conversationModePodcast) conversationModePodcast.click();
 
-            // 10 seconds later: Play All rotation + podcast
+            // 1. Start movie 1 now (user gesture → audio allowed)
+            if (playlistFiles.length > 0) {
+              playMovie(playlistFiles[0], { primeAudioDuringGesture: true })
+                .then(() => {
+                  if (bgAudio) {
+                    bgAudio.muted = false;
+                    bgAudio.volume = 1.0;
+                    if (bgAudio.paused && bgAudio.src) {
+                      bgAudio.play().catch(() => {});
+                    }
+                  }
+                })
+                .catch((err) => console.warn('Movie start failed:', err));
+            }
+
+            // 2. After 10 seconds: Play All 3 min mode + podcast AI
             setTimeout(() => {
               window.startMovieContentRotation?.(['test'], {
                 intervalSeconds: 180,
@@ -1941,16 +1949,7 @@ const startGestureApp = () => {
 
         startRenderLoop();
 
-        // Play first movie after loop starts
-        if (playlistFiles.length > 0) {
-          playMovie(playlistFiles[0], { primeAudioDuringGesture: true })
-            .then(() => {
-              console.log('Autoplay started.');
-            })
-            .catch((err) => {
-              console.warn('Autoplay failed:', err);
-            });
-        }
+        // Movie playback starts via the Start Chat button (user gesture)
       };
 
       requestAnimationFrame(() => startApp());
