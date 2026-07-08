@@ -14863,7 +14863,7 @@ const startGestureApp = () => {
     // Add any needed resize logic here
   });
 
-  // Auto-load Play All 3 movies (1,3,4) and start podcast after greeting
+  // Auto-load Play All 3 movies (1,3,4) and start podcast after first movie plays
   (async () => {
     await new Promise(resolve => {
       const checkReady = () => {
@@ -14885,29 +14885,25 @@ const startGestureApp = () => {
       });
     }, 500);
 
-    // Monitor for initial greeting and start podcast
-    let greetingDetected = false;
-    const checkForGreeting = () => {
-      if (greetingDetected || !aiChatMessages) return;
-      const messages = aiChatMessages.querySelectorAll('[data-role="assistant"]');
-      if (messages.length > 0) {
-        greetingDetected = true;
-        const lastMsg = messages[messages.length - 1];
-        const msgText = lastMsg?.textContent?.trim() || '';
-        if (msgText && msgText.length > 5) {
-          setTimeout(() => {
-            if (voiceManager?.synthesis?.speaking || publicPodcastAiAutoMode) {
-              startPublicPodcastAiConversation();
-            }
-          }, 1500);
-        }
+    // Monitor for video to start playing, then start podcast after movie intro
+    let podcastStarted = false;
+    const checkVideoPlaying = () => {
+      if (podcastStarted) return;
+      const videoEl = document.querySelector('video');
+      if (videoEl && videoEl.currentTime > 0 && !videoEl.paused) {
+        podcastStarted = true;
+        setTimeout(() => {
+          if (publicPodcastAiEnabled && !publicPodcastAiAutoMode) {
+            startPublicPodcastAiConversation();
+          }
+        }, 3000);
       }
     };
-    const greetingCheckInterval = setInterval(() => {
-      checkForGreeting();
-      if (greetingDetected) clearInterval(greetingCheckInterval);
+    const playCheckInterval = setInterval(() => {
+      checkVideoPlaying();
+      if (podcastStarted) clearInterval(playCheckInterval);
     }, 200);
-    setTimeout(() => clearInterval(greetingCheckInterval), 10000);
+    setTimeout(() => clearInterval(playCheckInterval), 30000);
   })();
 
 }; // End of startGestureApp
