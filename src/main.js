@@ -5240,6 +5240,8 @@ const startGestureApp = () => {
       `Questioning angle for turn ${turnNumber}: ${_angleHint}`,
       'Ask one specific follow-up that digs into one of the anchors, references, or observations above · something Muse has not yet been asked.',
       'Stay curious and concrete. Avoid abstract dogma, generic philosophy, and canned interview phrasing.',
+      'Tone: calm, unhurried, gentle — never urgent or excited. Speak softly, like a late-night radio host.',
+      'IMPORTANT: Write your question entirely in French (natural, conversational French).',
       'Return one short question only. No labels. No lists. No mention of AI, prompts, engines, or templates.'
     ].filter(Boolean).join('\n');
   }
@@ -5412,6 +5414,8 @@ const startGestureApp = () => {
       references ? `Reference cues: ${references}.` : '',
       sceneContext ? sceneContext : '',
       'Reply in plain prose only · no verse, no line breaks, no poem format.',
+      'Tone: calm, dreamy, unhurried — never urgent, dramatic, or breathless.',
+      'IMPORTANT: Reply entirely in French (natural, poetic French).',
       'Use 1 short complete sentence, 25 words maximum. Finish the thought. No lists. No mention of AI, prompt, engine, or templates.'
     ].filter(Boolean).join('\n');
   }
@@ -7749,12 +7753,12 @@ const startGestureApp = () => {
   function pickPodcastVoiceProfiles() {
     // Host A: measured interviewer pace. Host B: per-film voice character from movieBrains voiceProfile.
     const hostAPitch = 0.9;    // Slightly lower so Host A separates from Muse more clearly
-    const hostARate = 0.91;    // Measured interviewer cadence
+    const hostARate = 0.82;    // Calm, unhurried interviewer cadence
 
     // Pull per-film pitch/rate from the loaded movie brain's voiceProfile
     const movieVP = voiceManager?.currentMovieBrain?.voiceProfile || {};
     const hostBPitch = Number.isFinite(movieVP.pitch) ? Math.max(0.80, Math.min(1.20, movieVP.pitch)) : 0.97;
-    const hostBRate  = Number.isFinite(movieVP.rate)  ? Math.max(0.78, Math.min(1.02, movieVP.rate))  : 0.88;
+    const hostBRate  = Number.isFinite(movieVP.rate)  ? Math.max(0.75, Math.min(0.90, movieVP.rate))  : 0.80;
     const movieVoiceHints = Array.isArray(movieVP.voiceHints) ? movieVP.voiceHints.map(h => String(h).toLowerCase()) : [];
 
     const priorHostA = podcastVoiceProfiles?.hostA || null;
@@ -7769,8 +7773,10 @@ const startGestureApp = () => {
     }
 
     const voices = voiceManager.voices.filter(Boolean);
+    // Podcast speaks French: prefer fr-* voices, fall back to English, then anything.
+    const frenchVoices = voices.filter((voice) => /^fr/i.test(String(voice?.lang || '')));
     const englishVoices = voices.filter((voice) => /en/i.test(String(voice?.lang || '')));
-    const pool = englishVoices.length ? englishVoices : voices;
+    const pool = frenchVoices.length ? frenchVoices : (englishVoices.length ? englishVoices : voices);
     
     // Debug: What does the user actually have?
     if (voices.length > 0 && !window._loggedVoices) {
@@ -7779,7 +7785,7 @@ const startGestureApp = () => {
     }
     const podcastPool = pool;
     // Extended female name pattern · the Muse is ALWAYS a woman, matching the film's figure.
-    const femaleVoicePattern = /female|woman|zira|aria|jenny|samantha|ava|serena|allison|libby|victoria|susan|hazel|amber|google us english.*female|siri.*female|karen|moira|fiona|tessa|veena|alice|lisa|nikita/i;
+    const femaleVoicePattern = /female|woman|zira|aria|jenny|samantha|ava|serena|allison|libby|victoria|susan|hazel|amber|google us english.*female|siri.*female|karen|moira|fiona|tessa|veena|alice|lisa|nikita|hortense|julie|denise|eloise|vivienne|charlotte|coralie|jacqueline|yvette|brigitte|celine|audrey|amelie|amélie|pauline|virginie|léa|lea\b/i;
     const maleVoicePattern = /male|man|guy|david|mark|james|george|roger|eric|jason|ryan|andrew|christopher|daniel|reed|thomas/i;
     const likelyFemaleVoice = (voice) => femaleVoicePattern.test(String(voice?.name || ''));
     const likelyMaleVoice = (voice) => !likelyFemaleVoice(voice) && maleVoicePattern.test(String(voice?.name || ''));
@@ -7798,10 +7804,10 @@ const startGestureApp = () => {
       const name = String(voice?.name || '').toLowerCase();
       const lang = String(voice?.lang || '').toLowerCase();
       let score = 0;
-      if (!/en/.test(lang)) score -= 20;
+      if (/^fr/.test(lang)) score += 50; // Podcast is in French — strongly prefer fr voices
+      else if (!/en/.test(lang)) score -= 20;
       if (voice?.localService) score += 24;
       if (likelyFemaleVoice(voice)) score += 40;  // Per user: "always woman voice answering"
-      if (/^en-us/.test(lang) || /us english|american/.test(name)) score += 16;
       if (/^en-gb/.test(lang) || /uk english|british/.test(name)) score -= 24;
       if (/microsoft guy|guy online|\bguy\b|man\b|male\b/.test(name)) score -= 100; // Host A MUST NOT be male
       if (/google us english male/.test(name)) score -= 100;
@@ -7814,7 +7820,7 @@ const startGestureApp = () => {
     const rankHostBVoice = (voice, index = 0) => {
       const name = String(voice?.name || '').toLowerCase();
       const lang = String(voice?.lang || '').toLowerCase();
-      let score = /en/.test(lang) ? 2 : 0;
+      let score = /^fr/.test(lang) ? 50 : (/en/.test(lang) ? 2 : 0); // Podcast is in French
       if (voice?.localService) score += 24;
       // The Muse is ALWAYS female · heavily reward female voices, penalise male voices.
       if (likelyFemaleVoice(voice)) score += 60;
