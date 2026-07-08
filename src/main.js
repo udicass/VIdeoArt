@@ -14863,6 +14863,53 @@ const startGestureApp = () => {
     // Add any needed resize logic here
   });
 
+  // Auto-load Play All 3 movies (1,3,4) and start podcast after greeting
+  (async () => {
+    await new Promise(resolve => {
+      const checkReady = () => {
+        if (voiceManager?.synthesis) {
+          resolve();
+        } else {
+          setTimeout(checkReady, 100);
+        }
+      };
+      checkReady();
+    });
+
+    // Start Play All 3 min mode with movies 1, 3, 4
+    setTimeout(() => {
+      window.startMovieContentRotation?.(['test'], {
+        intervalSeconds: 180,
+        mode: 'play-all-3min',
+        movies: ['Synthetic_Desires_1.mp4', 'Synthetic_Desires_3.mp4', 'Synthetic_Desires_4.mp4']
+      });
+    }, 500);
+
+    // Monitor for initial greeting and start podcast
+    let greetingDetected = false;
+    const checkForGreeting = () => {
+      if (greetingDetected || !aiChatMessages) return;
+      const messages = aiChatMessages.querySelectorAll('[data-role="assistant"]');
+      if (messages.length > 0) {
+        greetingDetected = true;
+        const lastMsg = messages[messages.length - 1];
+        const msgText = lastMsg?.textContent?.trim() || '';
+        if (msgText && msgText.length > 5) {
+          setTimeout(() => {
+            if (voiceManager?.synthesis?.speaking || publicPodcastAiAutoMode) {
+              startPublicPodcastAiConversation();
+            }
+          }, 1500);
+        }
+      }
+    };
+    const greetingCheckInterval = setInterval(() => {
+      checkForGreeting();
+      if (greetingDetected) clearInterval(greetingCheckInterval);
+    }, 200);
+    setTimeout(() => clearInterval(greetingCheckInterval), 10000);
+  })();
+
 }; // End of startGestureApp
 
 if (document.readyState === 'loading') {
