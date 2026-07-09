@@ -739,6 +739,10 @@ const startGestureApp = () => {
   let aiModePillFlashTimer = null;
   let podcastVoiceProfiles = { hostA: null, hostB: null };
   let selectedConversationSurfaceMode = 'chat';
+  let storyVoiceOverEnabled = false;
+  let storyVoiceOverInFlight = false;
+  let storyVoiceOverLastMovie = '';
+  let storyVoiceOverQueuedMovie = '';
   let publicPodcastAiAutoMode = false;
   let publicPodcastAiTurnNumber = 0;
   let publicPodcastAiStartInFlight = false;
@@ -1180,7 +1184,7 @@ const startGestureApp = () => {
                 .catch((err) => console.warn('Movie start failed:', err));
             }
 
-            // 2. After 10 seconds: Play All 3 min mode + podcast AI
+            // 2. After 10 seconds: Play All 4.5 min mode + podcast AI
             setTimeout(() => {
               window.startMovieContentRotation?.(['test'], {
                 intervalSeconds: 180,
@@ -9703,7 +9707,7 @@ const startGestureApp = () => {
   }
 
   function formatPodcastChatLabel(speaker = 'hostA') {
-    if (speaker === 'hostB') return `${getPodcastMuseName()} ✦`;
+    if (speaker === 'hostB') return storyVoiceOverEnabled ? 'Voice Over ✦' : `${getPodcastMuseName()} ✦`;
     if (speaker === 'viewer') return 'You';
     return 'Host A';
   }
@@ -9721,7 +9725,7 @@ const startGestureApp = () => {
     if (!text) return '';
     const speaker = String(line?.speaker || 'hostA');
     if (speaker === 'hostB') {
-      return `${getPodcastMuseName()} ✦ ${text}`;
+      return `${storyVoiceOverEnabled ? 'Voice Over' : getPodcastMuseName()} ✦ ${text}`;
     }
     if (speaker === 'hostA') {
       return ensurePodcastQuestionMark(text);
@@ -13103,80 +13107,209 @@ const startGestureApp = () => {
     });
   }
 
-  if (btnStoryMode) {
-    btnStoryMode.addEventListener('click', async () => {
-      if (btnStoryMode.disabled) return;
-      btnStoryMode.classList.add('telling');
-      btnStoryMode.disabled = true;
-      btnStoryMode.textContent = '◎ Telling…';
-      try {
-        await runStoryMode();
-      } finally {
-        btnStoryMode.classList.remove('telling');
-        btnStoryMode.disabled = false;
-        btnStoryMode.textContent = '◎ Story';
+  function updateStoryModeButtonState() {
+    if (!btnStoryMode) return;
+    btnStoryMode.classList.toggle('active', storyVoiceOverEnabled);
+    btnStoryMode.classList.toggle('telling', storyVoiceOverInFlight);
+    btnStoryMode.disabled = storyVoiceOverInFlight;
+    btnStoryMode.textContent = storyVoiceOverInFlight
+      ? 'VO Running…'
+      : (storyVoiceOverEnabled ? 'Voice Over On' : 'Voice Over');
+    btnStoryMode.title = storyVoiceOverEnabled
+      ? 'Voice-over mode is on and will run for each loaded movie'
+      : 'Run a slower noir voice-over based on the current movie';
+  }
+
+  async function triggerStoryVoiceOverForCurrentMovie(options = {}) {
+    if (!storyVoiceOverEnabled || storyVoiceOverInFlight) return false;
+    const currentMovie = String(options?.movie || voiceManager?.currentMovie || '').trim();
+    if (!currentMovie) return false;
+    if (!options.force && storyVoiceOverLastMovie === currentMovie) return false;
+    storyVoiceOverInFlight = true;
+    storyVoiceOverQueuedMovie = '';
+    updateStoryModeButtonState();
+    try {
+      await runStoryMode({ movie: currentMovie });
+      storyVoiceOverLastMovie = currentMovie;
+      return true;
+    } finally {
+      storyVoiceOverInFlight = false;
+      updateStoryModeButtonState();
+      const queuedMovie = String(storyVoiceOverQueuedMovie || '').trim();
+      if (storyVoiceOverEnabled && queuedMovie && queuedMovie !== storyVoiceOverLastMovie) {
+        queueMicrotask(() => {
+          void triggerStoryVoiceOverForCurrentMovie({ movie: queuedMovie, force: true });
+        });
       }
+    }
+  }
+
+  function scheduleStoryVoiceOverForMovie(movieName = '', options = {}) {
+    const nextMovie = String(movieName || voiceManager?.currentMovie || '').trim();
+    if (!storyVoiceOverEnabled || !nextMovie) return;
+    if (!options.force && storyVoiceOverLastMovie === nextMovie) return;
+    if (storyVoiceOverInFlight) {
+      storyVoiceOverQueuedMovie = nextMovie;
+      return;
+    }
+    queueMicrotask(() => {
+      void triggerStoryVoiceOverForCurrentMovie({ movie: nextMovie, force: options.force === true });
     });
   }
 
-  // ── Story Mode ──────────────────────────────────────────────────────────────
-  // Host A asks 2 narrative questions in sequence.
-  // The Muse (hostB) delivers long-form responses. Both saved to brainMemory.
-  async function runStoryMode() {
-    const currentMovie = String(voiceManager?.currentMovie || '').trim();
+  if (btnStoryMode) {
+    updateStoryModeButtonState();
+    btnStoryMode.addEventListener('click', async () => {
+      storyVoiceOverEnabled = !storyVoiceOverEnabled;
+      if (!storyVoiceOverEnabled) {
+        storyVoiceOverQueuedMovie = '';
+        updateStoryModeButtonState();
+        appendChatMessage('assistant', 'Voice Over off.');
+        showAiSpeech('Voice Over off', true);
+        return;
+      }
+      storyVoiceOverLastMovie = '';
+      updateStoryModeButtonState();
+      appendChatMessage('assistant', 'Voice Over on.');
+      showAiSpeech('Voice Over on', true);
+      await triggerStoryVoiceOverForCurrentMovie({ force: true });
+    });
+  }
+
+  // ── Story Mode / Voice Over ─────────────────────────────────────────────────
+  // Builds a slower noir-style voice-over grounded in the active movie.
+  async function runStoryMode(options = {}) {
+    const currentMovie = String(options?.movie || voiceManager?.currentMovie || '').trim();
     if (!currentMovie) {
-      appendChatMessage('assistant', 'Load a movie first to run Story Mode.');
+      appendChatMessage('assistant', 'Load a movie first to run Voice Over.');
       return;
     }
     if (!podcastEngine || !voiceManager) {
-      appendChatMessage('assistant', 'Story Mode requires the podcast engine.');
+      appendChatMessage('assistant', 'Voice Over requires the podcast engine.');
       return;
     }
 
     const ctx = getFilmContext(currentMovie);
-    const museName = getPodcastMuseName();
     const theme = ctx?.theme || currentMovie;
     const lead = ctx?.lead || ctx?.persona || theme;
     const ref = ctx?.ref || ctx?.reference || '';
     const world = ctx?.world || '';
+    const videoEl = scene3d?.getVideoMesh?.()?.videoElement || null;
+    const remainingDurationSec = (videoEl && Number.isFinite(videoEl.duration))
+      ? Math.max(0, Number(videoEl.duration || 0) - Number(videoEl.currentTime || 0))
+      : 0;
+    const targetDurationSec = remainingDurationSec > 20 ? Math.max(45, remainingDurationSec - 1.5) : 90;
+    const targetSentenceCount = Math.max(30, Math.min(56, Math.round(targetDurationSec / 3.4)));
+    const targetBeatCount = Math.max(10, Math.min(20, Math.round(targetDurationSec / 8.5)));
 
     // Refresh podcast voice profiles for the current film before queuing beats
     pickPodcastVoiceProfiles();
 
-    // Build 2 Host A questions grounded in film context
-    const q1 = ref
-      ? `${museName}, before we go deeper — take us to the very first moment of this story. What does the scene feel like from the inside?`
-      : `${museName}, set the scene for us. Where are we, and what is already lost before anything begins?`;
-    const q2 = lead
-      ? `${museName}, tell us what ${lead} is carrying through this whole film — not just the image, but the weight underneath it.`
-      : `${museName}, what does this film know that it never says out loud?`;
+    const pickVoiceOverAccentVoice = () => {
+      const voices = Array.isArray(voiceManager?.voices) ? voiceManager.voices.filter(Boolean) : [];
+      if (!voices.length) return null;
+      const femaleVoicePattern = /female|woman|zira|aria|jenny|samantha|ava|serena|allison|libby|victoria|susan|hazel|amber|karen|moira|fiona|tessa|veena|alice|lisa|julie|denise|charlotte|audrey|pauline/i;
+      const rankVoice = (voice, index = 0) => {
+        const name = String(voice?.name || '').toLowerCase();
+        const lang = String(voice?.lang || '').toLowerCase();
+        let score = 0;
+        if (/^en-gb/.test(lang) || /british|uk english|english \(united kingdom\)/.test(name)) score += 100;
+        else if (/^en-au/.test(lang) || /australian/.test(name)) score += 50;
+        else if (/^en/.test(lang)) score += 25;
+        else score -= 80;
+        if (femaleVoicePattern.test(name)) score += 20;
+        if (voice?.localService) score += 8;
+        if (/natural|online/.test(name)) score += 8;
+        if (/robot|synth|desktop/.test(name)) score -= 8;
+        return score - (index * 0.001);
+      };
+      return voices
+        .map((voice, index) => ({ voice, score: rankVoice(voice, index) }))
+        .sort((a, b) => b.score - a.score)[0]?.voice || null;
+    };
 
-    // --- Voice profiles for story beats — derived from the film's own voiceProfile ---
-    // Each film has a distinct pitch/rate in movieBrains; story beats modulate around that base.
+    const filmTitle = currentMovie.replace(/\.mp4$/i, '').replace(/_/g, ' ');
+    const focusFigure = String(lead || 'the central figure').trim() || 'the central figure';
+    const voiceOverAccentVoice = pickVoiceOverAccentVoice();
+
+    const storyPrompts = [
+      [
+        `Open a cinematic voice-over for ${filmTitle}.`,
+        `Describe the world, the emotional weather, and ${focusFigure} in a Blade Runner and film noir register.`,
+        `Keep it intimate, moody, and character-led rather than plot-summary.`,
+        `Write in natural English only.`
+      ].join(' '),
+      [
+        `Continue the voice-over by focusing on ${focusFigure}, what they carry, and the desire or damage under the surface.`,
+        `Let the lines feel like a late-night monologue spoken over a close-up.`,
+        `Keep it precise, visual, and emotionally loaded.`,
+        `Write in natural English only.`
+      ].join(' '),
+      [
+        `Expand the voice-over into the spaces around ${focusFigure}: rooms, streets, reflections, glass, rain, smoke, silence, and pressure.`,
+        `Make the story feel larger without drifting into abstract criticism.`,
+        `Write in natural English only.`
+      ].join(' '),
+      [
+        `Push the voice-over deeper into memory, private ritual, and the hidden motive driving ${focusFigure}.`,
+        `The story should feel longer and fuller, as if it is carrying the movie toward its final image.`,
+        `Write in natural English only.`
+      ].join(' '),
+      [
+        `Add another long passage that keeps the same world and tone, but reveals a new detail, contradiction, or wound around ${focusFigure}.`,
+        `Avoid repeating earlier openings or phrases.`,
+        `Write in natural English only.`
+      ].join(' '),
+      [
+        `Write the closing stretch of the voice-over so it feels like it can carry the rest of the movie to the end.`,
+        `Stay grounded in image, body language, atmosphere, and unresolved feeling.`,
+        `Write in natural English only.`
+      ].join(' ')
+    ];
+    const activePromptCount = Math.max(4, Math.min(storyPrompts.length, Math.round(targetDurationSec / 18)));
+    const activePrompts = storyPrompts.slice(0, activePromptCount);
+
+    // Derive a slightly faster narration profile so longer stories still fill the movie.
     const filmVP = voiceManager?.currentMovieBrain?.voiceProfile || {};
-    const baseRate  = Number.isFinite(filmVP.rate)  ? Math.max(0.78, Math.min(1.02, filmVP.rate))  : 0.90;
-    const basePitch = Number.isFinite(filmVP.pitch) ? Math.max(0.80, Math.min(1.20, filmVP.pitch)) : 0.97;
-    const ACT1_VOICE = [
-      { rate: baseRate,        pitch: basePitch        }, // beat 0 — opening, grounded
-      { rate: baseRate + 0.03, pitch: basePitch + 0.03 }, // beat 1 — warming up
-      { rate: baseRate - 0.02, pitch: basePitch - 0.01 }, // beat 2 — weighted revelation
-      { rate: baseRate + 0.04, pitch: basePitch + 0.02 }  // beat 3 — forward momentum
+    const baseRate = Number.isFinite(filmVP.rate) ? Math.max(0.84, Math.min(1.02, filmVP.rate + 0.02)) : 0.91;
+    const basePitch = Number.isFinite(filmVP.pitch) ? Math.max(0.84, Math.min(1.04, filmVP.pitch - 0.03)) : 0.92;
+    const STORY_VOICE_PROFILES = [
+      { voice: voiceOverAccentVoice, rate: baseRate, pitch: basePitch },
+      { voice: voiceOverAccentVoice, rate: Math.max(0.84, baseRate - 0.02), pitch: Math.max(0.82, basePitch - 0.01) },
+      { voice: voiceOverAccentVoice, rate: Math.max(0.86, baseRate + 0.02), pitch: Math.max(0.83, basePitch - 0.02) },
+      { voice: voiceOverAccentVoice, rate: Math.max(0.84, baseRate - 0.01), pitch: Math.max(0.82, basePitch - 0.03) },
+      { voice: voiceOverAccentVoice, rate: Math.max(0.87, baseRate + 0.01), pitch: Math.max(0.83, basePitch - 0.01) },
+      { voice: voiceOverAccentVoice, rate: Math.max(0.85, baseRate), pitch: Math.max(0.82, basePitch - 0.02) }
     ];
-    // Act 2: intimate, slightly slower than Act 1
-    const ACT2_VOICE = [
-      { rate: baseRate,        pitch: basePitch        }, // beat 0 — reflective
-      { rate: baseRate - 0.03, pitch: basePitch - 0.02 }  // beat 1 — final, quiet landing
-    ];
-    const BEAT_PAUSE_MS = 450; // gap between beats (shorter — sentences now breathe individually)
+    const BEAT_PAUSE_MS = 420;
+    const SENTENCE_PAUSE_MS = 170;
+    const FINAL_PAUSE_MS = 260;
+
+    const distributeCounts = (total, parts, minPerPart = 1) => {
+      const safeParts = Math.max(1, Number(parts || 1));
+      const baseline = Math.max(minPerPart, Math.floor(Number(total || 0) / safeParts));
+      const remainder = Math.max(0, Number(total || 0) - (baseline * safeParts));
+      return Array.from({ length: safeParts }, (_, index) => baseline + (index < remainder ? 1 : 0));
+    };
+
+    const sentencePlan = distributeCounts(targetSentenceCount, activePrompts.length, 5);
+    const beatPlan = distributeCounts(targetBeatCount, activePrompts.length, 2);
+
+    const sanitizeStoryBeat = (text) => {
+      const replacement = /^[A-Z]/.test(focusFigure) ? focusFigure : `the ${focusFigure.replace(/^the\s+/i, '').trim()}`;
+      return String(text || '')
+        .replace(/\bHost A\b\s*:?/gi, '')
+        .replace(/\bMuse\b\s*:?/g, replacement)
+        .replace(/\bmuse\b\s*:?/g, 'the figure')
+        .replace(/\s+/g, ' ')
+        .trim();
+    };
 
     // Post-process a beat: add breath markers
     const storyifyBeat = (text) => {
-      return text
-        // em-dash at natural clause pivots
+      return sanitizeStoryBeat(text)
         .replace(/,\s*(but|yet|and then|as if|until|though|while|because|so that)\s/gi, ' — $1 ')
-        // ellipsis on trailing weight words
         .replace(/(\b(?:always|never|again|still|somewhere|somehow|already|almost))\./gi, '$1...')
-        // comma pause before final adverbials
         .replace(/\s+(finally|slowly|quietly|gently|suddenly|barely|only then)\./gi, ', $1.')
         .replace(/\s+/g, ' ')
         .trim();
@@ -13199,9 +13332,8 @@ const startGestureApp = () => {
     const isCriticVoice = (text) =>
       /cinematic dna|directed by|blade runner|ghost in the shell|\(\d{4}\)|ridley scott|villeneuve|mamoru|kar-wai|the film is|this film|the story of/i.test(text);
 
-    // Reject entries with no first-person pronouns — Muse must speak as "I" not as observer
-    const lacksFirstPerson = (text) =>
-      !/\b(i |i'm|i've|i'll|i'd|me |my |myself|we |we're|we've|our |us )\b/i.test(text);
+    const lacksNoirNarration = (text) =>
+      !/\b(he|she|they|his|her|their|the city|the night|the street|the room|the light|the face|the voice)\b/i.test(text);
 
     // Strip duplicate sentences within a single Gemma response.
     // Gemma often loops "The cinematic DNA..." 2-3× inside one reply.
@@ -13218,27 +13350,29 @@ const startGestureApp = () => {
       return out.join('').trim();
     };
 
-    const filmTitle = currentMovie.replace(/\.mp4$/i, '').replace(/_/g, ' ');
-
-    // System instruction for Gemini — first-person storyteller, not AI prose
+    // System instruction for Gemini — restrained noir voice-over, not AI prose
     const storySystemInstruction = (targetSentences = 12) => [
-      `You are ${museName}. You live inside "${filmTitle}". You are not describing the film — you ARE the film, speaking as I.`,
+      `You are writing a spoken voice-over for "${filmTitle}" in the style of moody character introductions from Blade Runner and classic film noir.`,
       `Theme: ${theme}.`,
       world ? `World: ${world}.` : '',
       ref ? `You carry: ${ref}.` : '',
-      `Every sentence must use I, me, my, or we. No third-person. No "the film". No director names. No "cinematic DNA".`,
-      `Start mid-thought with "I" — something personal, specific, unresolved. Not weather. Not setting.`,
-      `Mix short I-fragments (3-6 words) with longer I-sentences. Use — for sudden shifts. Use ... when trailing off.`,
-      `Tell ${targetSentences} sentences. Each starts with a different word. No lists. No AI language. No stage directions. Just your voice.`
+      `Center the voice-over on ${focusFigure}, describing them from the outside with empathy and tension.`,
+      `Write only in English. Avoid French or any other language.`,
+      `Never use the word "Muse".`,
+      `Keep the delivery lyrical, visual, and continuous. Blend short hard lines with longer flowing sentences so the story feels full enough to carry the movie.`,
+      `Use third-person or close external narration, not first-person confession. No director names. No criticism. No mention of "the film" or "cinematic DNA".`,
+      `Tell ${targetSentences} sentences. Vary sentence length. Use concrete imagery, neon-night melancholy, and character detail over exposition.`
     ].filter(Boolean).join(' ');
 
-    // Local story system prompt — Style Card format for a distinct narrative voice
+    // Local story system prompt — slow noir narration with external character description
     const localStorySystemPrompt = [
-      `You are ${museName}. You ARE "${filmTitle}" — not its narrator, not its critic. You are the film's own voice, speaking as I.`,
-      `TONE: ${theme}. Carry this as weight, not description.${world ? ` Texture: ${world}.` : ''}${ref ? ` What you carry: ${ref}.` : ''}`,
-      `ACCENT: Every sentence must use I, me, my, or we. No film titles. No director names. No years. No analysis. No abstract noun phrases without a subject.`,
-      `PACE: Staccato. One long floating sentence starting with I. Then two short cuts. Fragment. Then silence.`,
-      `CONSTRAINT: 5 sentences. First word of each must differ. Use first-person in every sentence. Never repeat a phrase. Speak only what you felt or witnessed — never describe yourself from outside.`
+      `Write as a noir voice-over artist introducing "${filmTitle}".`,
+      `TONE: ${theme}. Let it feel late-night, bruised, elegant, and slow.${world ? ` Texture: ${world}.` : ''}${ref ? ` Reference tone: ${ref}.` : ''}`,
+      `FOCUS: Describe ${focusFigure} the way a Blade Runner voice-over would describe someone entering frame: exact, haunted, restrained.`,
+      `LANGUAGE: English only. Natural idiomatic English. No French or mixed-language output.`,
+      `ACCENT: Third-person or close external narration only. No first-person. No film titles inside the reply. No directors. No analysis. No lists. Never use the word "Muse".`,
+      `PACE: 7 to 10 sentences. Long enough to feel like a substantial passage, but still speakable.`,
+      `CONSTRAINT: Avoid repeated openers. Use concrete objects, body language, light, smoke, glass, rain, chrome, shadow, or silence when relevant.`
     ].join(' ');
 
     // Try Gemini cloud for a single long response, fall through on failure
@@ -13269,8 +13403,8 @@ const startGestureApp = () => {
           ? beats.map(b => { const m = b.match(/^[^.!?…]+[.!?…]*/); return `"${(m ? m[0] : b.slice(0, 60)).trim()}"`; }).join(', ')
           : '';
         const continuePrompt = blacklistStr
-          ? `${question}\n\n[Do NOT begin with ${blacklistStr} or any variation of those. Start with a completely different image, person, or feeling.]`
-          : question;
+          ? `${question}\n\n[Write in English only. Do NOT begin with ${blacklistStr} or any variation of those. Start with a completely different image, person, or feeling.]`
+          : `${question}\n\n[Write in English only.]`;
 
         const raw = await voiceManager._tryLocalBrainFallback(continuePrompt, {
           prompt: continuePrompt,
@@ -13280,16 +13414,14 @@ const startGestureApp = () => {
           deferSideEffects: true
         });
         const text = intraDedup(raw ? String(raw).trim() : '');
-        if (!text || isCriticVoice(text) || lacksFirstPerson(text)) continue;
+        if (!text || isCriticVoice(text) || lacksNoirNarration(text)) continue;
         const fs = firstSentence(text);
         if (seenSentences.has(fs)) continue; // first sentence already seen — skip
         allSentences(text).forEach(s => seenSentences.add(s)); // register all sentences
         beats.push(storyifyBeat(text));
       }
 
-      // Fill remaining from podcast pipeline (DICT/cloud) with same sentence-level dedup
-      // Note: lacksFirstPerson is NOT applied here — DICT entries are curated character voice
-      // and many are intentionally third-person synopsis entries, which are still valid beats.
+      // Fill remaining from podcast pipeline (DICT/cloud) with same sentence-level dedup.
       if (beats.length < beatCount) {
         for (let i = 0; beats.length < beatCount && i < beatCount * 3; i++) {
           const result = await buildPodcastAutonomousMuseReply(question, { movie: currentMovie, ctx });
@@ -13330,7 +13462,7 @@ const startGestureApp = () => {
     };
 
     // Split long cloud text into sentence-level beats of ~nSentences each
-    const splitBeats = (text, nSentences = 3) => {
+    const splitBeats = (text, nSentences = 2) => {
       const sentences = text.match(/[^.!?…]+[.!?…]+(?:\s|$)/g) || [text];
       const beats = [];
       for (let i = 0; i < sentences.length; i += nSentences) {
@@ -13340,27 +13472,22 @@ const startGestureApp = () => {
       return beats;
     };
 
-    // Queue a beat: split into individual sentences so each gets its own TTS prosody reset.
-    // This is the biggest factor in natural-sounding delivery — paragraph-as-one-utterance
-    // applies a flat intonation; sentence-per-utterance lets the engine breathe naturally.
     const queueStoryBeat = (text, voiceProfile, isLast = false) => {
       const sentences = text.match(/[^.!?…]+[.!?…]+(?:\s|$)/g);
       if (!sentences || sentences.length <= 1) {
-        // Short or unpunctuated — single utterance
         podcastEngine.queueLine(text.trim(), 'hostB', {
           force: false,
           voiceOpts: voiceProfile,
-          pauseAfterMs: isLast ? 300 : BEAT_PAUSE_MS
+          pauseAfterMs: isLast ? FINAL_PAUSE_MS : BEAT_PAUSE_MS
         });
         return;
       }
-      // Multiple sentences — each gets its own queue entry with a small breath gap
       sentences.forEach((sentence, idx) => {
         const isLastSentence = idx === sentences.length - 1;
         podcastEngine.queueLine(sentence.trim(), 'hostB', {
           force: false,
           voiceOpts: voiceProfile,
-          pauseAfterMs: isLastSentence ? (isLast ? 300 : BEAT_PAUSE_MS) : 160
+          pauseAfterMs: isLastSentence ? (isLast ? FINAL_PAUSE_MS : BEAT_PAUSE_MS) : SENTENCE_PAUSE_MS
         });
       });
     };
@@ -13370,60 +13497,40 @@ const startGestureApp = () => {
     selectedConversationSurfaceMode = 'podcast';
     updateConversationModeUi();
 
-    // --- Act 1: Host A → Q1 → Muse ~2 min story (4 beats) ---
-    podcastEngine.queueLine(q1, 'hostA', { force: true });
+    appendChatMessage('assistant', `Starting Voice Over for ${filmTitle}.`);
+    showAiSpeech('Voice Over starting', true);
 
-    let act1Beats = [];
-    const cloudReply1 = await callMuseCloud(q1, 12);
-    if (cloudReply1) {
-      act1Beats = splitBeats(cloudReply1, 3);
-    } else {
-      act1Beats = await callMuseLocal(q1, 4);
+    const allStoryBeats = [];
+    for (let index = 0; index < activePrompts.length; index++) {
+      const prompt = activePrompts[index];
+      const targetSentences = sentencePlan[index] || 6;
+      const targetLocalBeats = beatPlan[index] || 2;
+      let segmentBeats = [];
+      const cloudReply = await callMuseCloud(prompt, targetSentences);
+      if (cloudReply) {
+        segmentBeats = splitBeats(cloudReply, 2);
+      } else {
+        segmentBeats = await callMuseLocal(prompt, targetLocalBeats);
+      }
+      if (!segmentBeats.length) continue;
+      allStoryBeats.push(...segmentBeats);
     }
 
-    act1Beats.forEach((beat, i) =>
-      queueStoryBeat(beat, ACT1_VOICE[i % ACT1_VOICE.length], i === act1Beats.length - 1)
-    );
-    const act1Full = intraDedup(act1Beats.join(' '));
-    let anySaved = false;
-    if (act1Full) {
-      saveMemory(currentMovie, q1, act1Full);
-      anySaved = true;
-      // Register all sentences in global blocklist so subsequent story runs don't repeat them
-      act1Beats.forEach(beat =>
-        allSentences(beat).forEach(s => {
-          recentPodcastHostAnswerLines = rememberRecentPodcastLine(recentPodcastHostAnswerLines, s);
+    allStoryBeats.forEach((beat, index) => {
+      const profile = STORY_VOICE_PROFILES[index % STORY_VOICE_PROFILES.length];
+      queueStoryBeat(beat, profile, index === allStoryBeats.length - 1);
+    });
+
+    const storyFull = intraDedup(allStoryBeats.join(' '));
+    if (storyFull) {
+      saveMemory(currentMovie, `Voice Over for ${filmTitle}`, storyFull);
+      allStoryBeats.forEach((beat) =>
+        allSentences(beat).forEach((sentence) => {
+          recentPodcastHostAnswerLines = rememberRecentPodcastLine(recentPodcastHostAnswerLines, sentence);
         })
       );
+      appendChatMessage('assistant', '🎙 Voice Over saved to brain memory.');
     }
-
-    // --- Act 2: Host A → Q2 → Muse ~1 min continue (2 beats) ---
-    await new Promise(r => setTimeout(r, 800));
-    podcastEngine.queueLine(q2, 'hostA', { force: false });
-
-    let act2Beats = [];
-    const cloudReply2 = await callMuseCloud(q2, 6);
-    if (cloudReply2) {
-      act2Beats = splitBeats(cloudReply2, 3);
-    } else {
-      act2Beats = await callMuseLocal(q2, 2);
-    }
-
-    act2Beats.forEach((beat, i) =>
-      queueStoryBeat(beat, ACT2_VOICE[i % ACT2_VOICE.length], i === act2Beats.length - 1)
-    );
-    const act2Full = intraDedup(act2Beats.join(' '));
-    if (act2Full) {
-      saveMemory(currentMovie, q2, act2Full);
-      anySaved = true;
-      act2Beats.forEach(beat =>
-        allSentences(beat).forEach(s => {
-          recentPodcastHostAnswerLines = rememberRecentPodcastLine(recentPodcastHostAnswerLines, s);
-        })
-      );
-    }
-
-    if (anySaved) appendChatMessage('assistant', '🎙 Story saved to brain memory.');
   }
 
   async function submitChatFromInput() {
@@ -13994,6 +14101,7 @@ const startGestureApp = () => {
 
       enterVideoMode();
       renderPlayPauseButton(true);
+      scheduleStoryVoiceOverForMovie(movieFileName);
       if (shouldResumePublicPodcastAiAfterMovieChange) {
         resumePublicPodcastAiAfterMovieChange(movieFileName);
       }
@@ -14082,6 +14190,7 @@ const startGestureApp = () => {
     'surveillance identity machine exam synthetic body',
     'desire ritual memory dream collapse cinematic myth',
   ];
+  const PLAY_ALL_TOTAL_MS = 270000;
 
   let movieContentRotationTimer = null;
   let movieContentRotationIndex = 0;
@@ -14143,7 +14252,7 @@ const startGestureApp = () => {
 
   async function runPlayAll3MinLoop(movies) {
     movieContentRotationPlayAllActive = true;
-    const timePerSlot = Math.floor(180000 / movies.length);
+    const timePerSlot = Math.floor(PLAY_ALL_TOTAL_MS / movies.length);
 
     for (let i = 0; i < movies.length; i++) {
       if (!movieContentRotationPlayAllActive) break;
@@ -14176,7 +14285,7 @@ const startGestureApp = () => {
 
     if (movieContentRotationPlayAllActive) {
       movieContentRotationPlayAllActive = false;
-      appendChatMessage('assistant', 'Play All complete — 3 min cycle finished.');
+      appendChatMessage('assistant', 'Play All complete — 4.5 min cycle finished.');
     }
   }
 
@@ -14228,7 +14337,7 @@ const startGestureApp = () => {
     stopMovieContentRotation();
 
     const rawMode = String(options?.mode || 'interval').toLowerCase();
-    const isPlayAll3Min = rawMode === 'play-all-3min';
+    const isPlayAll3Min = rawMode === 'play-all-3min' || rawMode === 'play-all-4-5min';
 
     const directMovies = isPlayAll3Min && Array.isArray(options?.movies) && options.movies.length
       ? options.movies
@@ -14240,8 +14349,8 @@ const startGestureApp = () => {
     if (isPlayAll3Min && directMovies.length) {
       // Sequential loop: each movie plays its slot, AI answer finishes, then next movie
       void runPlayAll3MinLoop(directMovies);
-      const slotSec = Math.round(180000 / directMovies.length / 1000);
-      appendChatMessage('assistant', `Started Play All: ${directMovies.length} movies × ~${slotSec}s = 3 min total. Waits for AI answer before each transition.`);
+      const slotSec = Math.round(PLAY_ALL_TOTAL_MS / directMovies.length / 1000);
+      appendChatMessage('assistant', `Started Play All: ${directMovies.length} movies × ~${slotSec}s = 4.5 min total. Waits for AI answer before each transition.`);
     } else {
       movieContentRotationMode = (rawMode === 'ended') ? 'ended' : 'interval';
       const intervalMs = Math.max(5, Number(options?.intervalSeconds || 30)) * 1000;
@@ -14276,7 +14385,7 @@ const startGestureApp = () => {
       <div class="movie-rotation-panel__header">Movie Rotation</div>
       <label class="movie-rotation-panel__label" for="movie-rotation-mode">Mode</label>
       <select id="movie-rotation-mode" class="movie-rotation-panel__input">
-        <option value="play-all-3min">Play All · 3 min, finish answer</option>
+        <option value="play-all-3min">Play All · 4.5 min, finish answer</option>
         <option value="interval">Every N seconds</option>
         <option value="ended">After movie ends</option>
       </select>
@@ -14320,7 +14429,7 @@ const startGestureApp = () => {
       const movies = moviesRaw.split(',').map(s => s.trim()).filter(Boolean).map(n => `Synthetic_Desires_${n}.mp4`);
       const result = startMovieContentRotation(prompts, { intervalSeconds, mode, movies: movies.length ? movies : undefined });
       statusEl.textContent = result.ok
-        ? (mode === 'play-all-3min' ? `Running: Play All · 3 min, finish answer (movies: ${moviesRaw})`
+        ? ((mode === 'play-all-3min' || mode === 'play-all-4-5min') ? `Running: Play All · 4.5 min, finish answer (movies: ${moviesRaw})`
           : mode === 'ended' ? 'Running until each movie ends'
           : `Running every ${intervalSeconds}s`)
         : (result.message || 'Could not start rotation.');

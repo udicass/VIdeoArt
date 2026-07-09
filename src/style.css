@@ -2373,6 +2373,29 @@ body.public-podcast-ai .ai-speech-meta {
   box-shadow: 0 0 16px rgba(0, 229, 160, 0.18);
 }
 
+.conversation-mode-btn-story {
+  color: #fde68a;
+}
+
+.conversation-mode-btn-story:hover,
+.conversation-mode-btn-story:focus-visible {
+  color: #fff2bf;
+  background: rgba(120, 80, 10, 0.34);
+  box-shadow: 0 0 14px rgba(251, 191, 36, 0.18);
+}
+
+.conversation-mode-btn-story.telling {
+  background: linear-gradient(135deg, rgba(120, 80, 10, 0.5), rgba(68, 36, 10, 0.72));
+  color: #fff7d6;
+  box-shadow: 0 0 18px rgba(251, 191, 36, 0.32);
+  animation: story-pulse 3s ease-in-out infinite;
+}
+
+.conversation-mode-btn-story:disabled {
+  cursor: default;
+  opacity: 0.85;
+}
+
 .conversation-mode-btn.ai-mode-pill-split.active {
   background: linear-gradient(135deg, rgba(139, 92, 246, 0.22), rgba(109, 40, 217, 0.24));
   color: #c4b5fd;
@@ -2488,26 +2511,6 @@ body.secret-train-unlocked .chat-training-row {
 @keyframes full-run-pulse {
   0%, 100% { box-shadow: 0 0 6px rgba(168, 85, 247, 0.2); }
   50% { box-shadow: 0 0 18px rgba(168, 85, 247, 0.5); }
-}
-
-.chat-train-btn-story {
-  border-color: rgba(251, 191, 36, 0.4);
-  background: rgba(120, 80, 10, 0.12);
-  color: #fde68a;
-}
-
-.chat-train-btn-story:hover,
-.chat-train-btn-story:focus-visible {
-  border-color: rgba(253, 230, 138, 0.9);
-  background: rgba(92, 60, 4, 0.76);
-  box-shadow: 0 0 14px rgba(251, 191, 36, 0.28);
-}
-
-.chat-train-btn-story.telling {
-  border-color: rgba(253, 230, 138, 0.7);
-  background: rgba(120, 80, 10, 0.22);
-  color: #fef3c7;
-  animation: story-pulse 3s ease-in-out infinite;
 }
 
 @keyframes story-pulse {
