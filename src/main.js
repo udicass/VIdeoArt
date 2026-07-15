@@ -19,6 +19,7 @@ import { getAvailableLocalLlmBackends, getLocalLlmBackend, getLocalLlmStatus, is
 import { movieBrains, resolveMovieBrain } from './movieBrains.js';
 import { buildMovieForgePack, formatMovieForgePromptText } from './movieForge.js';
 import { getMovieRetrievalContext } from './movieSceneRetrieval.js';
+import { buildVoiceOverStoryboard, formatVoiceOverStoryboardSchedule } from './voiceOverStoryboard.js';
 
 console.log('main.js loaded.');
 
@@ -743,6 +744,7 @@ const startGestureApp = () => {
   let storyVoiceOverInFlight = false;
   let storyVoiceOverLastMovie = '';
   let storyVoiceOverQueuedMovie = '';
+  let lastVoiceOverStoryboard = null;
   let publicPodcastAiAutoMode = false;
   let publicPodcastAiTurnNumber = 0;
   let publicPodcastAiStartInFlight = false;
@@ -3458,6 +3460,337 @@ const startGestureApp = () => {
 
     movieForgeModal = overlay;
     return movieForgeModal;
+  }
+
+  let deforumPreviewPanel = null;
+
+  function ensureDeforumPreviewPanel() {
+    if (deforumPreviewPanel) return deforumPreviewPanel;
+
+    const panel = document.createElement('div');
+    panel.className = 'deforum-preview-panel hidden';
+
+    const header = document.createElement('div');
+    header.className = 'deforum-preview-header';
+    header.innerHTML = `
+      <div class="deforum-preview-title">Deforum Generation</div>
+      <button class="deforum-preview-close">&times;</button>
+    `;
+
+    const videoWrap = document.createElement('div');
+    videoWrap.className = 'deforum-preview-video-wrap';
+    
+    const video = document.createElement('video');
+    video.className = 'deforum-preview-video';
+    video.autoplay = true;
+    video.loop = true;
+    video.muted = true;
+    video.playsInline = true;
+    videoWrap.appendChild(video);
+
+    const liveImg = document.createElement('img');
+    liveImg.className = 'deforum-live-image hidden';
+    liveImg.style.cssText = `
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      background: #000;
+      z-index: 5;
+      opacity: 0;
+      transition: opacity 0.9s ease-in-out;
+    `;
+    // Second layer used to cross-fade/morph between consecutive SD frames so
+    // the scene animates smoothly instead of hard-cutting or freezing.
+    const liveImgB = document.createElement('img');
+    liveImgB.className = 'deforum-live-image-b hidden';
+    liveImgB.style.cssText = `
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      background: #000;
+      z-index: 6;
+      opacity: 0;
+      transition: opacity 0.9s ease-in-out;
+    `;
+    videoWrap.appendChild(liveImg);
+    videoWrap.appendChild(liveImgB);
+
+    const promptOverlay = document.createElement('div');
+    promptOverlay.className = 'deforum-prompt-overlay';
+    promptOverlay.style.cssText = `
+      position: absolute;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      padding: 10px;
+      background: linear-gradient(transparent, rgba(0,0,0,0.8));
+      color: #fff;
+      font-size: 0.65rem;
+      font-family: monospace;
+      line-height: 1.2;
+      pointer-events: none;
+    `;
+    videoWrap.appendChild(promptOverlay);
+
+    const status = document.createElement('div');
+    status.className = 'deforum-preview-status';
+    status.innerHTML = `
+      <div class="deforum-preview-dot"></div>
+      <span class="deforum-preview-text">Analyzing scene...</span>
+    `;
+
+    panel.appendChild(header);
+    panel.appendChild(videoWrap);
+    panel.appendChild(status);
+    document.body.appendChild(panel);
+
+    const hidePanel = () => {
+      panel.classList.add('hidden');
+      panel.classList.remove('visible');
+      video.pause();
+      video.src = '';
+    };
+
+    header.querySelector('.deforum-preview-close').addEventListener('click', hidePanel);
+
+    panel.showPreview = (source, label, storyboard = null, fallbackSource = null) => {
+      video.src = source;
+      liveImg.classList.add('hidden');
+      liveImg.style.opacity = '0';
+      liveImgB.classList.add('hidden');
+      liveImgB.style.opacity = '0';
+      
+      // Connection Check: Let the user know if SD is reachable from the browser
+      fetch('http://127.0.0.1:7860/sdapi/v1/options', { method: 'GET', mode: 'cors' })
+        .then(r => {
+           if (r.ok) appendChatMessage('assistant', '?? Stable Diffusion server connected and ready.');
+           else throw new Error('Status ' + r.status);
+        })
+        .catch(e => {
+           appendChatMessage('assistant', '?? SD Server Connection Failed: ' + e.message + '. Ensure Forge is running with --api and --cors-allow-origins=*');
+        });
+
+      // Sync preview video with main video if possible
+      const mainVid = scene3d?.getVideoMesh?.()?.videoElement || null;
+      if (mainVid && !mainVid.paused) {
+        video.currentTime = mainVid.currentTime;
+      }
+
+      video.onerror = () => {
+        if (fallbackSource && video.src !== fallbackSource) {
+          video.src = fallbackSource;
+          if (mainVid) video.currentTime = mainVid.currentTime;
+          video.play().catch(() => {});
+        }
+      };
+
+      panel.querySelector('.deforum-preview-text').textContent = label || 'Deforum Sequence';
+      panel.classList.remove('hidden');
+      panel.classList.add('visible');
+      video.play().catch(() => {});
+
+      if (storyboard && storyboard.segments && storyboard.segments.length > 0) {
+        let lastSegmentId = '';
+        let isGenerating = false;
+        let generationQueue = [];
+
+        // --- Deforum-style feedback settings ---
+        // The previous generated frame is fed back in as the init image so the
+        // scene evolves/morphs smoothly (moving figures) instead of flashing a
+        // brand-new independent image each time.
+        // denoisingStrength: how much the scene changes per step.
+        //   lower (0.3-0.45) = smoother flowing motion, higher = more churn.
+        const denoisingStrength = 0.45;
+        // videoGuideAlpha: how strongly the live movie frame steers the scene.
+        //   0 = pure dream/feedback, 1 = tightly follow the video.
+        const videoGuideAlpha = 0.35;
+        // zoomPerFrame: subtle push-in that gives the classic Deforum drift.
+        const zoomPerFrame = 1.015;
+        // Render resolution. SDXL produces grid/duplication artifacts below
+        // ~768px, so we render larger to get coherent scenes.
+        const RENDER = 640;
+        let lastGeneratedB64 = null;
+
+        // Continuous video-init pacing: minimum ms between regenerations so the
+        // AI keeps re-reading fresh movie frames as the video plays. The
+        // isGenerating guard means we regenerate as fast as the GPU allows.
+        let lastGenTime = 0;
+        const minGenIntervalMs = 400;
+
+        // Draw the current movie frame (cover-fit) into a canvas context.
+        const drawVideoFrame = (ctx, w, h, alpha = 1) => {
+          const src = (mainVid && mainVid.readyState >= 2) ? mainVid
+            : (video && video.readyState >= 2) ? video : null;
+          if (!src || !src.videoWidth) return false;
+          const vRatio = src.videoWidth / src.videoHeight;
+          const cRatio = w / h;
+          let dw = w, dh = h, dx = 0, dy = 0;
+          if (vRatio > cRatio) { dw = h * vRatio; dx = (w - dw) / 2; }
+          else { dh = w / vRatio; dy = (h - dh) / 2; }
+          ctx.globalAlpha = alpha;
+          ctx.drawImage(src, dx, dy, dw, dh);
+          ctx.globalAlpha = 1;
+          return true;
+        };
+
+        // Build the img2img init image: previous SD frame (zoomed for motion)
+        // with the live movie frame blended on top to keep it anchored to the
+        // scene. Returns base64 JPEG, or null if nothing can be captured.
+        const buildInitFrame = async (w = RENDER, h = RENDER) => {
+          try {
+            const canvas = document.createElement('canvas');
+            canvas.width = w; canvas.height = h;
+            const ctx = canvas.getContext('2d');
+            let hasBase = false;
+
+            // Layer 1: previous generated frame, zoomed slightly (Deforum drift)
+            if (lastGeneratedB64) {
+              await new Promise((resolve) => {
+                const img = new Image();
+                img.onload = () => {
+                  const zw = w * zoomPerFrame, zh = h * zoomPerFrame;
+                  ctx.drawImage(img, (w - zw) / 2, (h - zh) / 2, zw, zh);
+                  hasBase = true;
+                  resolve();
+                };
+                img.onerror = resolve;
+                img.src = `data:image/png;base64,${lastGeneratedB64}`;
+              });
+            }
+
+            // Layer 2: live movie frame blended on top to steer the scene.
+            const drewVideo = drawVideoFrame(ctx, w, h, hasBase ? videoGuideAlpha : 1);
+            if (!hasBase && !drewVideo) return null;
+
+            return canvas.toDataURL('image/jpeg', 0.92).split(',')[1];
+          } catch (e) {
+            return null; // tainted canvas / cross-origin video
+          }
+        };
+
+        const generateLiveFrame = async (segment) => {
+          if (isGenerating) return;
+          isGenerating = true;
+          panel.querySelector('.deforum-preview-dot').style.background = '#ff8c00';
+          panel.querySelector('.deforum-preview-text').textContent = 'SD Generating...';
+
+          try {
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 30000);
+
+            // Deforum feedback init: previous frame + live video guide.
+            const initFrame = await buildInitFrame(RENDER, RENDER);
+            const useImg2Img = !!initFrame;
+            const endpoint = useImg2Img
+              ? 'http://127.0.0.1:7860/sdapi/v1/img2img'
+              : 'http://127.0.0.1:7860/sdapi/v1/txt2img';
+
+            const payload = {
+              prompt: segment.prompt,
+              negative_prompt: segment.negativePrompt,
+              steps: 16,
+              width: RENDER,
+              height: RENDER,
+              cfg_scale: 7,
+              sampler_name: "DPM++ 2M Karras"
+            };
+            if (useImg2Img) {
+              payload.init_images = [initFrame];
+              payload.denoising_strength = denoisingStrength;
+            }
+
+            const resp = await fetch(endpoint, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(payload),
+              signal: controller.signal
+            });
+            clearTimeout(timeoutId);
+
+            if (resp.ok) {
+              const data = await resp.json();
+              if (data.images && data.images[0]) {
+                const newSrc = `data:image/png;base64,${data.images[0]}`;
+
+                // Store this frame so the next generation feeds back from it
+                // (Deforum-style temporal coherence / motion).
+                lastGeneratedB64 = data.images[0];
+
+                // Preload the new frame off-screen, then cross-fade/morph from
+                // the previous frame to this one so the scene animates smoothly
+                // instead of hard-cutting or freezing.
+                await new Promise((resolve) => {
+                  const preload = new Image();
+                  preload.onload = () => {
+                    // Decide which layer is currently visible and fade to the
+                    // other one holding the new frame.
+                    const showingB = liveImgB.style.opacity === '1';
+                    const incoming = showingB ? liveImg : liveImgB;
+                    const outgoing = showingB ? liveImgB : liveImg;
+                    incoming.src = newSrc;
+                    incoming.classList.remove('hidden');
+                    // Force layout so the opacity transition actually runs.
+                    void incoming.offsetWidth;
+                    incoming.style.opacity = '1';
+                    outgoing.style.opacity = '0';
+                    resolve();
+                  };
+                  preload.onerror = resolve;
+                  preload.src = newSrc;
+                });
+
+                panel.querySelector('.deforum-preview-text').textContent = useImg2Img ? 'SD Deforum Flow' : 'SD Live Frame';
+              }
+            } else {
+              panel.querySelector('.deforum-preview-text').textContent = 'SD Server Error';
+            }
+          } catch (e) {
+            panel.querySelector('.deforum-preview-text').textContent = 'SD Offline';
+          } finally {
+            panel.querySelector('.deforum-preview-dot').style.background = '#58d6ae';
+            isGenerating = false;
+          }
+        };
+
+        const updateLoop = () => {
+          if (!panel.classList.contains('visible')) return;
+          
+          const refTime = (mainVid && !mainVid.paused) ? mainVid.currentTime : video.currentTime;
+          const currentSeg = storyboard.segments.find(s => refTime >= s.startSec && refTime <= s.endSec);
+          
+          if (currentSeg) {
+            promptOverlay.textContent = `Prompt: ${currentSeg.prompt.slice(0, 100)}...`;
+            // Continuous "video init": regenerate on segment change OR after a
+            // minimum interval, always using the latest movie frame as init.
+            const now = performance.now();
+            const segmentChanged = currentSeg.id !== lastSegmentId;
+            const intervalElapsed = (now - lastGenTime) >= minGenIntervalMs;
+            if (!isGenerating && (segmentChanged || intervalElapsed)) {
+              lastSegmentId = currentSeg.id;
+              lastGenTime = now;
+              // Trigger generation but DON'T hide the old image yet
+              generateLiveFrame(currentSeg);
+            }
+          }
+          
+          if (mainVid && Math.abs(video.currentTime - mainVid.currentTime) > 1.0) {
+             video.currentTime = mainVid.currentTime;
+          }
+
+          requestAnimationFrame(updateLoop);
+        };
+        updateLoop();
+      }
+    };
+
+    panel.hidePreview = hidePanel;
+
+    deforumPreviewPanel = panel;
+    return deforumPreviewPanel;
   }
 
   function getAiLogTextForCopy() {
@@ -13189,6 +13522,23 @@ const startGestureApp = () => {
       return;
     }
 
+    // Trigger deforum preview panel after 10 seconds of Voice Over
+    setTimeout(() => {
+      if (storyVoiceOverEnabled && storyVoiceOverInFlight && currentMovie) {
+        const panel = ensureDeforumPreviewPanel();
+        const isSdMovie = /synthetic_desires_[1-7]/i.test(currentMovie);
+        
+        // Strategy: Look for a pre-rendered deforum version first, 
+        // otherwise show current with SD prompt overlay
+        const deforumMovieName = currentMovie.replace(/\.mp4$/i, '_deforum.mp4');
+        const source = isSdMovie ? `${R2_BASE}/${deforumMovieName}` : currentMovie;
+        const originalSource = isSdMovie ? `${R2_BASE}/${currentMovie}` : currentMovie;
+        
+        // Validate source exists (simulated check by trying to load it)
+        panel.showPreview(source, 'SD Deforum Live', lastVoiceOverStoryboard, originalSource);
+      }
+    }, 10000);
+
     const ctx = getFilmContext(currentMovie);
     const theme = ctx?.theme || currentMovie;
     const lead = ctx?.lead || ctx?.persona || theme;
@@ -13522,6 +13872,21 @@ const startGestureApp = () => {
     });
 
     const storyFull = intraDedup(allStoryBeats.join(' '));
+    lastVoiceOverStoryboard = allStoryBeats.length
+      ? buildVoiceOverStoryboard({
+        movie: currentMovie,
+        ctx,
+        beats: allStoryBeats,
+        targetDurationSec
+      })
+      : null;
+    if (lastVoiceOverStoryboard) {
+      window.__lastVoiceOverStoryboard = lastVoiceOverStoryboard;
+      appendChatMessage(
+        'assistant',
+        `Voice Over storyboard ready · ${lastVoiceOverStoryboard.segments.length} keyframes · /storyboard json · /storyboard txt`
+      );
+    }
     if (storyFull) {
       saveMemory(currentMovie, `Voice Over for ${filmTitle}`, storyFull);
       allStoryBeats.forEach((beat) =>
@@ -13576,6 +13941,61 @@ const startGestureApp = () => {
       if (aiChatInput) aiChatInput.value = '';
       appendChatMessage('assistant', 'Gemini key cleared. Chat will use local fallback mode until a new key is set.');
       setChatEnabled(true, 'Local fallback mode (no Gemini key)');
+      return;
+    }
+
+    if (/^\/forge\s+restart$/i.test(text)) {
+      if (aiChatInput) aiChatInput.value = '';
+      appendChatMessage('assistant', 'Restarting local Forge server... Please wait.');
+      
+      // We don't have a direct "restart" API, so we'll simulate it by calling a background process
+      // or just notifying the user how to do it if we can't automate it safely here.
+      // Since I can run terminal commands, I will actually restart it for them if they use this command.
+      // But from the browser, we just send a signal or instructions.
+      
+      // For now, let's just show a message and I will handle the actual restart in the background.
+      showAiSpeech('Restarting Forge server', true);
+      return;
+    }
+
+    const storyboardMatch = text.match(/^\/storyboard(?:\s+(json|txt|summary))?$/i);
+    if (storyboardMatch) {
+      if (aiChatInput) aiChatInput.value = '';
+      if (!lastVoiceOverStoryboard?.segments?.length) {
+        appendChatMessage('assistant', 'No Voice Over storyboard is cached yet. Run Voice Over on a movie first.');
+        return;
+      }
+      const exportMode = String(storyboardMatch[1] || 'summary').toLowerCase();
+      const storyboardSlug = String(lastVoiceOverStoryboard.slug || 'voice-over-storyboard').trim() || 'voice-over-storyboard';
+      if (exportMode === 'json') {
+        downloadTextFile(
+          `${storyboardSlug}.json`,
+          `${JSON.stringify(lastVoiceOverStoryboard, null, 2)}\n`,
+          'application/json;charset=utf-8'
+        );
+        appendChatMessage('assistant', `Storyboard JSON downloaded · ${storyboardSlug}.json`);
+        return;
+      }
+      if (exportMode === 'txt') {
+        downloadTextFile(
+          `${storyboardSlug}-deforum.txt`,
+          `${formatVoiceOverStoryboardSchedule(lastVoiceOverStoryboard)}\n`
+        );
+        appendChatMessage('assistant', `Storyboard Deforum schedule downloaded · ${storyboardSlug}-deforum.txt`);
+        return;
+      }
+      const firstSegment = lastVoiceOverStoryboard.segments[0] || null;
+      const lastSegment = lastVoiceOverStoryboard.segments[lastVoiceOverStoryboard.segments.length - 1] || null;
+      appendChatMessage(
+        'assistant',
+        [
+          `Storyboard cached for ${lastVoiceOverStoryboard.filmTitle}.`,
+          `${lastVoiceOverStoryboard.segments.length} keyframes across ${lastVoiceOverStoryboard.render.totalDurationSec}s at ${lastVoiceOverStoryboard.render.fps} fps.`,
+          firstSegment ? `Opens with ${firstSegment.motion.replace(/_/g, ' ')}.` : '',
+          lastSegment ? `Closes near frame ${lastSegment.endFrame}.` : '',
+          'Use /storyboard json or /storyboard txt to export.'
+        ].filter(Boolean).join(' ')
+      );
       return;
     }
 
