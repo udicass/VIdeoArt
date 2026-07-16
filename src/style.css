@@ -4,6 +4,11 @@ body,
   padding: 0;
 }
 
+.deforum-preview-panel {
+  width: 400px;
+  height: 400px;
+}
+
 .movie-rotation-panel {
   position: fixed;
   right: 18px;
@@ -2818,7 +2823,8 @@ body.chat-snapshot-open {
   right: 20px;
   top: 50%;
   transform: translateY(-50%);
-  width: 280px;
+  width: 400px;
+  height: 400px;
   background: rgba(9, 12, 18, 0.9);
   border: 1px solid rgba(91, 220, 182, 0.4);
   border-radius: 12px;
@@ -3374,63 +3380,6 @@ body.chat-snapshot-open {
   background: rgba(0, 229, 160, 0.35);
 }
 
-.chat-input-row {
-  display: flex;
-  gap: 8px;
-  padding: 10px;
-  border-top: 1px solid var(--border-subtle);
-}
-
-/* Suggestion pills row (chat bottom) */
-.ai-suggestions-row {
-  display: flex;
-  gap: 0;
-  padding: 8px 10px;
-  border-top: 1px solid var(--border-subtle);
-  background: rgba(0, 229, 160, 0.02);
-  overflow-x: auto;
-  overflow-y: hidden;
-  max-height: 50px;
-}
-
-.ai-suggestions-row.hidden { display: none; }
-
-.ai-suggestions-container {
-  display: flex;
-  gap: 6px;
-  flex-wrap: nowrap;
-  min-width: min-content;
-  align-items: center;
-}
-
-.ai-suggestion-pill {
-  display: inline-flex;
-  align-items: center;
-  padding: 6px 12px;
-  background: rgba(0, 229, 160, 0.15);
-  border: 1px solid rgba(0, 229, 160, 0.4);
-  border-radius: 16px;
-  color: var(--text-primary);
-  font-size: 0.75rem;
-  font-weight: 500;
-  white-space: nowrap;
-  cursor: pointer;
-  transition: all 0.2s ease;
-  user-select: none;
-  flex-shrink: 0;
-}
-
-.ai-suggestion-pill:hover {
-  background: rgba(0, 229, 160, 0.25);
-  border-color: rgba(0, 229, 160, 0.6);
-  transform: scale(1.02);
-}
-
-.ai-suggestion-pill:active {
-  transform: scale(0.98);
-  background: rgba(0, 229, 160, 0.35);
-}
-
 #ai-chat-input {
   flex: 1;
   min-width: 0;
@@ -3731,12 +3680,12 @@ body.chat-snapshot-open {
 .playlist-controls {
   display: flex;
   justify-content: center;
-  padding-top: 8px;
+  padding-top
 }
 
 #btn-load-playlist {
   background: var(--accent-secondary);
-  color: #000;
+  color: #
   border: none;
   padding: 6px 12px;
   font-size: 0.78rem;

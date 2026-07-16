@@ -3479,6 +3479,10 @@ const startGestureApp = () => {
 
     const videoWrap = document.createElement('div');
     videoWrap.className = 'deforum-preview-video-wrap';
+    videoWrap.style.cssText = `
+      position: absolute;
+      inset: 0;
+    `;
     
     const video = document.createElement('video');
     video.className = 'deforum-preview-video';
@@ -3499,7 +3503,7 @@ const startGestureApp = () => {
       background: #000;
       z-index: 5;
       opacity: 0;
-      transition: opacity 0.9s ease-in-out;
+      transition: opacity 0.35s ease-in-out;
     `;
     // Second layer used to cross-fade/morph between consecutive SD frames so
     // the scene animates smoothly instead of hard-cutting or freezing.
@@ -3514,7 +3518,7 @@ const startGestureApp = () => {
       background: #000;
       z-index: 6;
       opacity: 0;
-      transition: opacity 0.9s ease-in-out;
+      transition: opacity 0.35s ease-in-out;
     `;
     videoWrap.appendChild(liveImg);
     videoWrap.appendChild(liveImgB);
@@ -3598,28 +3602,63 @@ const startGestureApp = () => {
         let isGenerating = false;
         let generationQueue = [];
 
-        // --- Deforum-style feedback settings ---
-        // The previous generated frame is fed back in as the init image so the
-        // scene evolves/morphs smoothly (moving figures) instead of flashing a
-        // brand-new independent image each time.
-        // denoisingStrength: how much the scene changes per step.
-        //   lower (0.3-0.45) = smoother flowing motion, higher = more churn.
-        const denoisingStrength = 0.45;
-        // videoGuideAlpha: how strongly the live movie frame steers the scene.
-        //   0 = pure dream/feedback, 1 = tightly follow the video.
-        const videoGuideAlpha = 0.35;
-        // zoomPerFrame: subtle push-in that gives the classic Deforum drift.
-        const zoomPerFrame = 1.015;
-        // Render resolution. SDXL produces grid/duplication artifacts below
-        // ~768px, so we render larger to get coherent scenes.
-        const RENDER = 640;
+        // --- Cinematic "drop-and-lock" strength schedule ---
+        // Between prompt changes the figure stays completely stable/locked
+        // (high strength_schedule = low denoising). Right when a storyboard
+        // segment's prompt changes, strength drops for a short window so the
+        // AI can rewrite the figure (fast, deliberate movie-style
+        // transformation instead of a slow muddy fade), then snaps straight
+        // back to locked - avoiding the grain/grid that a flat mid-strength
+        // value produces when held too long.
+        // NOTE: kept below ~0.6 - at 0.70 the sampler discarded too much of
+        // the init image (including the live video mask blended into it),
+        // which lost the movie anchor entirely during the transition window.
+        const LOCKED_DENOISING = 0.35;       // strength_schedule ~0.65 (locked)
+        const TRANSITION_DENOISING = 0.55;   // strength_schedule ~0.45 (fast morph, video mask still holds)
+        const TRANSITION_WINDOW_FRAMES = 6;  // 5-8 frame window per guidance
+        let framesSinceSegmentChange = 999;
+        let lastPromptSegmentId = '';
+        // CLIP skip 2: ignores the final, most volatile layer of prompt
+        // interpretation, which is prone to single-frame grid lines/spikes.
+        const CLIP_SKIP = 2;
+        // videoGuideAlpha: how strongly the LIVE movie frame acts as a mask
+        // anchoring each generation. Pushed close to 1.0 so the real video
+        // content dominates over SD's own recycled output, keeping figures
+        // recognizable instead of drifting into abstract grid/grain/bubbles.
+        const videoGuideAlpha = 0.92;
+        // Every N generations, drop the SD feedback entirely and re-anchor to
+        // a pure, fresh video frame so the loop can never drift too far from
+        // real figures no matter how long the video plays.
+        const RESET_EVERY_N_FRAMES = 6;
+        let frameCount = 0;
+        // Deforum render/sampler settings.
+        // Smaller render size = much faster generation per frame.
+        const RENDER = 384;
+        // Reduced alongside the smaller render size - fewer pixels need fewer
+        // steps to resolve cleanly, keeping frames fast.
+        const STEPS = 24;
+        const CFG_SCALE = 7;
+        // Euler a / DPM++ SDE variants inject fresh stochastic noise every
+        // step, which produces grid/checkerboard artifacts when constrained
+        // by a feedback-loop init image. DPM++ 2M (Karras schedule) is far
+        // more stable. This Forge version splits sampler and schedule type
+        // into separate API fields (verified via /sdapi/v1/samplers and
+        // /sdapi/v1/schedulers).
+        const SAMPLER = "DPM++ 2M";
+        const SCHEDULER = "Karras";
+        const RESTORE_FACES = false;
+        // seed_behavior: "iter" -> start at seed and increment each frame.
+        let currentSeed = 3892608527;
+        const SEED_ITER_N = 1;
+        // ControlNet disabled: no SDXL-compatible model is installed.
         let lastGeneratedB64 = null;
+
 
         // Continuous video-init pacing: minimum ms between regenerations so the
         // AI keeps re-reading fresh movie frames as the video plays. The
         // isGenerating guard means we regenerate as fast as the GPU allows.
         let lastGenTime = 0;
-        const minGenIntervalMs = 400;
+        const minGenIntervalMs = 150; // Fast cadence for snappy transitions
 
         // Draw the current movie frame (cover-fit) into a canvas context.
         const drawVideoFrame = (ctx, w, h, alpha = 1) => {
@@ -3637,23 +3676,26 @@ const startGestureApp = () => {
           return true;
         };
 
-        // Build the img2img init image: previous SD frame (zoomed for motion)
-        // with the live movie frame blended on top to keep it anchored to the
-        // scene. Returns base64 JPEG, or null if nothing can be captured.
+        // Build the img2img init image: previous SD frame blended with the
+        // live movie frame (strongly anchored) so figures stay recognizable.
+        // Every RESET_EVERY_N_FRAMES frames we skip the SD feedback layer
+        // entirely and use a pure video frame, preventing the loop from
+        // drifting into abstract grid/grain garbage over a long play session.
         const buildInitFrame = async (w = RENDER, h = RENDER) => {
           try {
             const canvas = document.createElement('canvas');
             canvas.width = w; canvas.height = h;
             const ctx = canvas.getContext('2d');
             let hasBase = false;
+            const doReset = (RESET_EVERY_N_FRAMES > 0) &&
+              (frameCount % RESET_EVERY_N_FRAMES === 0);
 
-            // Layer 1: previous generated frame, zoomed slightly (Deforum drift)
-            if (lastGeneratedB64) {
+            // Layer 1: previous generated frame (skipped on reset frames).
+            if (lastGeneratedB64 && !doReset) {
               await new Promise((resolve) => {
                 const img = new Image();
                 img.onload = () => {
-                  const zw = w * zoomPerFrame, zh = h * zoomPerFrame;
-                  ctx.drawImage(img, (w - zw) / 2, (h - zh) / 2, zw, zh);
+                  ctx.drawImage(img, 0, 0, w, h);
                   hasBase = true;
                   resolve();
                 };
@@ -3666,9 +3708,74 @@ const startGestureApp = () => {
             const drewVideo = drawVideoFrame(ctx, w, h, hasBase ? videoGuideAlpha : 1);
             if (!hasBase && !drewVideo) return null;
 
+            frameCount += 1;
             return canvas.toDataURL('image/jpeg', 0.92).split(',')[1];
           } catch (e) {
             return null; // tainted canvas / cross-origin video
+          }
+        };
+
+        // Color coherence (RGB mean/std match, a lightweight stand-in for
+        // Deforum's LAB color coherence). Without this, repeatedly feeding
+        // SD's own output back into itself lets brightness/color drift a
+        // little every frame; over many frames that drift compounds into a
+        // grainy, "pixelated burnout" look. Re-anchoring each new frame's
+        // color statistics to the live video frame keeps it stable.
+        const applyColorCoherence = async (generatedB64, w = RENDER, h = RENDER) => {
+          try {
+            const canvas = document.createElement('canvas');
+            canvas.width = w; canvas.height = h;
+            const ctx = canvas.getContext('2d');
+
+            const genImg = await new Promise((resolve, reject) => {
+              const img = new Image();
+              img.onload = () => resolve(img);
+              img.onerror = reject;
+              img.src = `data:image/png;base64,${generatedB64}`;
+            });
+            ctx.drawImage(genImg, 0, 0, w, h);
+            const genData = ctx.getImageData(0, 0, w, h);
+
+            const refCanvas = document.createElement('canvas');
+            refCanvas.width = w; refCanvas.height = h;
+            const refCtx = refCanvas.getContext('2d');
+            const drewRef = drawVideoFrame(refCtx, w, h, 1);
+            if (!drewRef) return generatedB64; // no reference frame available
+
+            const refData = refCtx.getImageData(0, 0, w, h);
+
+            const stats = (data) => {
+              let sums = [0, 0, 0], sqSums = [0, 0, 0];
+              const n = data.length / 4;
+              for (let i = 0; i < data.length; i += 4) {
+                for (let c = 0; c < 3; c++) sums[c] += data[i + c];
+              }
+              const means = sums.map((s) => s / n);
+              for (let i = 0; i < data.length; i += 4) {
+                for (let c = 0; c < 3; c++) {
+                  const d = data[i + c] - means[c];
+                  sqSums[c] += d * d;
+                }
+              }
+              const stds = sqSums.map((s) => Math.sqrt(s / n) || 1);
+              return { means, stds };
+            };
+
+            const genStats = stats(genData.data);
+            const refStats = stats(refData.data);
+
+            const pixels = genData.data;
+            for (let i = 0; i < pixels.length; i += 4) {
+              for (let c = 0; c < 3; c++) {
+                const ratio = refStats.stds[c] / genStats.stds[c];
+                let v = (pixels[i + c] - genStats.means[c]) * ratio + refStats.means[c];
+                pixels[i + c] = Math.max(0, Math.min(255, v));
+              }
+            }
+            ctx.putImageData(genData, 0, 0);
+            return canvas.toDataURL('image/jpeg', 0.95).split(',')[1];
+          } catch (e) {
+            return generatedB64; // fall back to uncorrected frame on any error
           }
         };
 
@@ -3682,6 +3789,26 @@ const startGestureApp = () => {
             const controller = new AbortController();
             const timeoutId = setTimeout(() => controller.abort(), 30000);
 
+            // Prompt-shock tracking: reset the damping counter whenever the
+            // storyboard segment (and therefore the prompt) changes.
+            if (segment.id !== lastPromptSegmentId) {
+              lastPromptSegmentId = segment.id;
+              framesSinceSegmentChange = 0;
+            } else {
+              framesSinceSegmentChange += 1;
+            }
+
+            // Drop-and-lock: use the aggressive transition strength for a
+            // short window right at the prompt change, then snap back to the
+            // locked/stable strength for the rest of the segment.
+            const inTransitionWindow = framesSinceSegmentChange < TRANSITION_WINDOW_FRAMES;
+            const effectiveDenoising = inTransitionWindow ? TRANSITION_DENOISING : LOCKED_DENOISING;
+            // Noise tied to strength so the two schedules never fight each
+            // other (a common cause of the "boiling water" bubble look) -
+            // near-zero extra noise while locked, a small hint during the
+            // fast transition window to help resolve the new geometry.
+            const effectiveNoiseMultiplier = 0.6 + 0.5 * effectiveDenoising;
+
             // Deforum feedback init: previous frame + live video guide.
             const initFrame = await buildInitFrame(RENDER, RENDER);
             const useImg2Img = !!initFrame;
@@ -3692,15 +3819,23 @@ const startGestureApp = () => {
             const payload = {
               prompt: segment.prompt,
               negative_prompt: segment.negativePrompt,
-              steps: 16,
+              steps: STEPS,
               width: RENDER,
               height: RENDER,
-              cfg_scale: 7,
-              sampler_name: "DPM++ 2M Karras"
+              cfg_scale: CFG_SCALE,
+              sampler_name: SAMPLER,
+              scheduler: SCHEDULER,
+              restore_faces: RESTORE_FACES,
+              seed: currentSeed,
+              override_settings: { CLIP_stop_at_last_layers: CLIP_SKIP },
+              override_settings_restore_afterwards: false
             };
+            // seed_behavior "iter": advance the seed for the next frame.
+            currentSeed += SEED_ITER_N;
             if (useImg2Img) {
               payload.init_images = [initFrame];
-              payload.denoising_strength = denoisingStrength;
+              payload.denoising_strength = effectiveDenoising;
+              payload.initial_noise_multiplier = effectiveNoiseMultiplier;
             }
 
             const resp = await fetch(endpoint, {
@@ -3714,11 +3849,12 @@ const startGestureApp = () => {
             if (resp.ok) {
               const data = await resp.json();
               if (data.images && data.images[0]) {
-                const newSrc = `data:image/png;base64,${data.images[0]}`;
+                const coherentB64 = await applyColorCoherence(data.images[0], RENDER, RENDER);
+                const newSrc = `data:image/png;base64,${coherentB64}`;
 
                 // Store this frame so the next generation feeds back from it
                 // (Deforum-style temporal coherence / motion).
-                lastGeneratedB64 = data.images[0];
+                lastGeneratedB64 = coherentB64;
 
                 // Preload the new frame off-screen, then cross-fade/morph from
                 // the previous frame to this one so the scene animates smoothly
@@ -3743,7 +3879,8 @@ const startGestureApp = () => {
                   preload.src = newSrc;
                 });
 
-                panel.querySelector('.deforum-preview-text').textContent = useImg2Img ? 'SD Deforum Flow' : 'SD Live Frame';
+                panel.querySelector('.deforum-preview-text').textContent =
+                  inTransitionWindow ? 'SD Morphing…' : 'SD Deforum Flow';
               }
             } else {
               panel.querySelector('.deforum-preview-text').textContent = 'SD Server Error';
