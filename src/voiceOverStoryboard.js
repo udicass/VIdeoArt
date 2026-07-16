@@ -119,6 +119,7 @@ function buildNegativePrompt() {
     'subtitle',
     'text overlay',
     'logo',
+    'tiling, pattern, grid, repetitive, symmetrical, texture', // Anti-tiling
     'extra limbs',
     'duplicate face',
     'blurry anatomy',

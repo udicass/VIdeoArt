@@ -3632,11 +3632,15 @@ const startGestureApp = () => {
         const RESET_EVERY_N_FRAMES = 6;
         let frameCount = 0;
         // Deforum render/sampler settings.
-        // Smaller render size = much faster generation per frame.
-        const RENDER = 384;
-        // Reduced alongside the smaller render size - fewer pixels need fewer
-        // steps to resolve cleanly, keeping frames fast.
-        const STEPS = 24;
+        // NOTE: 384 caused SDXL's classic "resolution too small" failure -
+        // the model starts tiling/repeating patterns across the canvas
+        // instead of rendering one coherent scene. SDXL needs to stay at
+        // 512+ to avoid this. Kept steps/cadence fast elsewhere instead.
+        const RENDER = 512;
+        // Steps raised to 40 so the sampler has enough iterations even during
+        // the low-denoising "locked" phases (e.g. 40 * 0.35 = 14 steps) to
+        // fully resolve geometry instead of collapsing into a tiled pattern.
+        const STEPS = 40;
         const CFG_SCALE = 7;
         // Euler a / DPM++ SDE variants inject fresh stochastic noise every
         // step, which produces grid/checkerboard artifacts when constrained
