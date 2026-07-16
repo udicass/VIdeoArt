@@ -3613,7 +3613,7 @@ const startGestureApp = () => {
         // NOTE: kept below ~0.6 - at 0.70 the sampler discarded too much of
         // the init image (including the live video mask blended into it),
         // which lost the movie anchor entirely during the transition window.
-        const LOCKED_DENOISING = 0.35;       // strength_schedule ~0.65 (locked)
+        const LOCKED_DENOISING = 0.40;       // strength_schedule ~0.60 (locked)
         const TRANSITION_DENOISING = 0.55;   // strength_schedule ~0.45 (fast morph, video mask still holds)
         const TRANSITION_WINDOW_FRAMES = 6;  // 5-8 frame window per guidance
         let framesSinceSegmentChange = 999;
@@ -3628,8 +3628,8 @@ const startGestureApp = () => {
         const videoGuideAlpha = 0.92;
         // Every N generations, drop the SD feedback entirely and re-anchor to
         // a pure, fresh video frame so the loop can never drift too far from
-        // real figures no matter how long the video plays.
-        const RESET_EVERY_N_FRAMES = 6;
+        // real figures. More aggressive reset to combat initial instability.
+        const RESET_EVERY_N_FRAMES = 3;
         let frameCount = 0;
         // Deforum render/sampler settings.
         // NOTE: 384 caused SDXL's classic "resolution too small" failure -
@@ -3638,9 +3638,9 @@ const startGestureApp = () => {
         // 512+ to avoid this. Kept steps/cadence fast elsewhere instead.
         const RENDER = 512;
         // Steps raised to 40 so the sampler has enough iterations even during
-        // the low-denoising "locked" phases (e.g. 40 * 0.35 = 14 steps) to
+        // the low-denoising "locked" phases (e.g. 30 * 0.40 = 12 steps) to
         // fully resolve geometry instead of collapsing into a tiled pattern.
-        const STEPS = 40;
+        const STEPS = 30;
         const CFG_SCALE = 7;
         // Euler a / DPM++ SDE variants inject fresh stochastic noise every
         // step, which produces grid/checkerboard artifacts when constrained
