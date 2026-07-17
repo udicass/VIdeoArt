@@ -745,6 +745,69 @@ const startGestureApp = () => {
   let storyVoiceOverLastMovie = '';
   let storyVoiceOverQueuedMovie = '';
   let lastVoiceOverStoryboard = null;
+  const DEFORUM_LIVE_CONFIG_STORAGE_KEY = 'gesture3d.deforum-live-config.v1';
+  const defaultDeforumLiveConfig = {
+    totalFrames: 40,
+    steps: 10,
+    strength: 0.78,
+    diffusionCadence: 1,
+    height: 512,
+    clipSkip: 2
+  };
+  const readDeforumLiveConfig = () => {
+    try {
+      return {
+        ...defaultDeforumLiveConfig,
+        ...JSON.parse(localStorage.getItem(DEFORUM_LIVE_CONFIG_STORAGE_KEY) || '{}')
+      };
+    } catch {
+      return { ...defaultDeforumLiveConfig };
+    }
+  };
+  const saveDeforumLiveConfig = (config) => {
+    const next = { ...defaultDeforumLiveConfig, ...config };
+    localStorage.setItem(DEFORUM_LIVE_CONFIG_STORAGE_KEY, JSON.stringify(next));
+    return next;
+  };
+  const applyDeforumLiveConfigToStoryboard = (storyboard) => {
+    const config = readDeforumLiveConfig();
+    const next = JSON.parse(JSON.stringify(storyboard || {}));
+    const totalFrames = Math.max(1, Number(config.totalFrames) || defaultDeforumLiveConfig.totalFrames);
+    next.render = {
+      ...(next.render || {}),
+      totalFrames,
+      totalDurationSec: Number((totalFrames / 15).toFixed(2)),
+      fps: 15,
+      deforum: {
+        steps: Math.max(6, Math.min(40, Number(config.steps) || defaultDeforumLiveConfig.steps)),
+        strength: Math.max(0.1, Math.min(0.9, Number(config.strength) || defaultDeforumLiveConfig.strength)),
+        diffusionCadence: Math.max(1, Math.min(8, Number(config.diffusionCadence) || defaultDeforumLiveConfig.diffusionCadence)),
+        height: Math.max(256, Math.min(768, Number(config.height) || defaultDeforumLiveConfig.height)),
+        clipSkip: Math.max(1, Math.min(4, Number(config.clipSkip) || defaultDeforumLiveConfig.clipSkip))
+      }
+    };
+
+    if (Array.isArray(next.segments) && next.segments.length) {
+      const originalEnd = Math.max(
+        Number(storyboard?.render?.totalFrames) || 0,
+        ...next.segments.map((segment) => Number(segment.endFrame || segment.keyframe || 0))
+      ) || totalFrames;
+      next.segments = next.segments.map((segment) => {
+        const scaleFrame = (frame) => Math.max(0, Math.min(totalFrames - 1, Math.round((Number(frame) || 0) / originalEnd * (totalFrames - 1))));
+        const startFrame = scaleFrame(segment.startFrame ?? segment.keyframe ?? 0);
+        const endFrame = Math.max(startFrame + 1, Math.min(totalFrames, scaleFrame(segment.endFrame ?? segment.keyframe ?? startFrame) + 1));
+        return {
+          ...segment,
+          keyframe: scaleFrame(segment.keyframe ?? segment.startFrame ?? 0),
+          startFrame,
+          endFrame,
+          startSec: Number((startFrame / 15).toFixed(2)),
+          endSec: Number((endFrame / 15).toFixed(2))
+        };
+      });
+    }
+    return next;
+  };
   let publicPodcastAiAutoMode = false;
   let publicPodcastAiTurnNumber = 0;
   let publicPodcastAiStartInFlight = false;
@@ -3473,7 +3536,10 @@ const startGestureApp = () => {
     const header = document.createElement('div');
     header.className = 'deforum-preview-header';
     header.innerHTML = `
-      <div class="deforum-preview-title">Deforum Generation</div>
+      <div class="deforum-preview-title">
+        <span class="deforum-record-status" style="font-size: 0.7rem; color: #ff5555; margin-right: 10px; display: none;">REC ●</span>
+        Deforum Generation
+      </div>
       <button class="deforum-preview-close">&times;</button>
     `;
 
@@ -3499,7 +3565,7 @@ const startGestureApp = () => {
       inset: 0;
       width: 100%;
       height: 100%;
-      object-fit: cover;
+      object-fit: contain;
       background: #000;
       z-index: 5;
       opacity: 0;
@@ -3514,7 +3580,7 @@ const startGestureApp = () => {
       inset: 0;
       width: 100%;
       height: 100%;
-      object-fit: cover;
+      object-fit: contain;
       background: #000;
       z-index: 6;
       opacity: 0;
@@ -3522,6 +3588,29 @@ const startGestureApp = () => {
     `;
     videoWrap.appendChild(liveImg);
     videoWrap.appendChild(liveImgB);
+
+    // Recording canvas (hidden) to composite the animation for MediaRecorder
+    const captureCanvas = document.createElement('canvas');
+    captureCanvas.style.display = 'none';
+    videoWrap.appendChild(captureCanvas);
+
+    // Video player for the final recorded movie popup
+    const resultPlayer = document.createElement('video');
+    resultPlayer.className = 'deforum-result-player';
+    resultPlayer.style.cssText = `
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+      background: #000;
+      z-index: 20;
+      display: none;
+    `;
+    resultPlayer.controls = true;
+    resultPlayer.autoplay = true;
+    resultPlayer.loop = true;
+    videoWrap.appendChild(resultPlayer);
 
     const promptOverlay = document.createElement('div');
     promptOverlay.className = 'deforum-prompt-overlay';
@@ -3547,8 +3636,31 @@ const startGestureApp = () => {
       <span class="deforum-preview-text">Analyzing scene...</span>
     `;
 
+    const liveConfig = readDeforumLiveConfig();
+    const configBar = document.createElement('div');
+    configBar.className = 'deforum-live-config';
+    configBar.innerHTML = `
+      <label>Frames <input class="deforum-config-frames" type="number" min="1" max="2400" step="1" value="${liveConfig.totalFrames}"></label>
+      <label>Steps <input class="deforum-config-steps" type="number" min="6" max="40" step="1" value="${liveConfig.steps}"></label>
+      <label>Strength <input class="deforum-config-strength" type="number" min="0.1" max="0.9" step="0.05" value="${liveConfig.strength}"></label>
+      <label>Cadence <input class="deforum-config-cadence" type="number" min="1" max="8" step="1" value="${liveConfig.diffusionCadence}"></label>
+      <label>Height <select class="deforum-config-height">
+        <option value="384">384</option>
+        <option value="512">512</option>
+        <option value="640">640</option>
+      </select></label>
+      <label>Clip <select class="deforum-config-clip-skip">
+        <option value="1">1</option>
+        <option value="2">2</option>
+      </select></label>
+      <button type="button" class="deforum-config-save">Apply Next</button>
+    `;
+    configBar.querySelector('.deforum-config-height').value = String(liveConfig.height);
+    configBar.querySelector('.deforum-config-clip-skip').value = String(liveConfig.clipSkip);
+
     panel.appendChild(header);
     panel.appendChild(videoWrap);
+    panel.appendChild(configBar);
     panel.appendChild(status);
     document.body.appendChild(panel);
 
@@ -3557,9 +3669,117 @@ const startGestureApp = () => {
       panel.classList.remove('visible');
       video.pause();
       video.src = '';
+      if (isAnimationRunning) {
+        clearTimeout(stopTimer);
+        stopAnimationAndNotify();
+      }
     };
 
     header.querySelector('.deforum-preview-close').addEventListener('click', hidePanel);
+    configBar.querySelector('.deforum-config-save').addEventListener('click', () => {
+      const nextConfig = saveDeforumLiveConfig({
+        totalFrames: Number(configBar.querySelector('.deforum-config-frames').value),
+        steps: Number(configBar.querySelector('.deforum-config-steps').value),
+        strength: Number(configBar.querySelector('.deforum-config-strength').value),
+        diffusionCadence: Number(configBar.querySelector('.deforum-config-cadence').value),
+        height: Number(configBar.querySelector('.deforum-config-height').value),
+        clipSkip: Number(configBar.querySelector('.deforum-config-clip-skip').value)
+      });
+      panel.querySelector('.deforum-preview-text').textContent = `Next Deforum: ${nextConfig.totalFrames} frames, ${nextConfig.steps} steps`;
+    });
+
+    const DURATION_MS = 4 * 60 * 1000;
+    let isAnimationRunning = false;
+    let stopTimer = null;
+    let animationStartTime = 0;
+    let animationStartedAt = 0;
+    let deforumPreviewTimer = null;
+
+    const startNativeDeforumRender = async (storyboard, source) => {
+      panel.querySelector('.deforum-preview-dot').style.background = '#ff8c00';
+      panel.querySelector('.deforum-preview-text').textContent = 'Queueing native Deforum…';
+      try {
+        const configuredStoryboard = applyDeforumLiveConfigToStoryboard(storyboard);
+        const response = await fetch('/api/dev/render-deforum', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ storyboard: configuredStoryboard, source })
+        });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || 'Deforum did not accept the render.');
+
+        const jobId = Array.isArray(data.job_ids) ? data.job_ids[0] : 'queued job';
+        panel.querySelector('.deforum-preview-text').textContent = 'Native Deforum rendering…';
+        appendChatMessage('assistant', `Native Deforum render queued: <code>${jobId}</code>. Forge now owns the keyframes, warping, frame sequence, and MP4 creation.`);
+
+        clearInterval(deforumPreviewTimer);
+        deforumPreviewTimer = setInterval(async () => {
+          try {
+            const previewResponse = await fetch(`/api/dev/deforum-preview?jobId=${encodeURIComponent(jobId)}`);
+            const preview = await previewResponse.json();
+            if (preview.frame && liveImg.src !== preview.frame) {
+              liveImg.src = preview.frame;
+              liveImg.classList.remove('hidden');
+              liveImg.style.opacity = '1';
+              liveImgB.style.opacity = '0';
+            }
+            if (preview.movie) {
+              resultPlayer.src = preview.movie;
+              resultPlayer.style.display = 'block';
+              liveImg.style.opacity = '0';
+              liveImgB.style.opacity = '0';
+            }
+            panel.querySelector('.deforum-preview-text').textContent = preview.phase === 'DONE'
+              ? (preview.movie ? 'Native Deforum movie ready' : 'Native Deforum finishing movie…')
+              : `Native Deforum ${String(preview.phase || 'rendering').toLowerCase()}…`;
+            if ((preview.phase === 'DONE' && preview.movie) || preview.status === 'FAILED' || preview.status === 'CANCELLED') {
+              clearInterval(deforumPreviewTimer);
+              deforumPreviewTimer = null;
+            }
+          } catch {
+            // Keep the last generated preview visible during a transient local request failure.
+          }
+        }, 5000);
+      } catch (error) {
+        panel.querySelector('.deforum-preview-dot').style.background = '#d95b5b';
+        panel.querySelector('.deforum-preview-text').textContent = 'Native Deforum unavailable';
+        appendChatMessage('assistant', `Native Deforum could not start: ${error.message}`);
+      }
+    };
+
+    const stopAnimationAndNotify = () => {
+      isAnimationRunning = false;
+      if (deforumPreviewPanel) {
+        deforumPreviewPanel.querySelector('.deforum-record-status').style.display = 'none';
+        deforumPreviewPanel.querySelector('.deforum-preview-text').textContent = 'Stitching movie…';
+      }
+      appendChatMessage('assistant', 'Time is up — stitching the saved frames into a movie file…');
+
+      fetch('/api/dev/stitch-movie', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ fps: 15, startedAt: animationStartedAt })
+      })
+        .then((r) => r.json().then((data) => ({ ok: r.ok, data })))
+        .then(({ ok, data }) => {
+          if (deforumPreviewPanel) {
+            deforumPreviewPanel.querySelector('.deforum-preview-text').textContent = ok
+              ? 'Movie saved!'
+              : 'Stitching failed.';
+          }
+          if (ok) {
+            appendChatMessage('assistant', `Movie ready: <code>${data.file}</code> (${data.frameCount} frames).`);
+          } else {
+            appendChatMessage('assistant', `Could not stitch movie: ${data.error}`);
+          }
+        })
+        .catch((e) => {
+          appendChatMessage('assistant', `Could not stitch movie: ${e.message}`);
+        });
+    };
+
+    let isStitching = false;
+    let stitchRenderSize = 512;
 
     panel.showPreview = (source, label, storyboard = null, fallbackSource = null) => {
       video.src = source;
@@ -3567,6 +3787,16 @@ const startGestureApp = () => {
       liveImg.style.opacity = '0';
       liveImgB.classList.add('hidden');
       liveImgB.style.opacity = '0';
+      resultPlayer.style.display = 'none';
+
+      header.querySelector('.deforum-record-status').style.display = 'inline';
+
+      isAnimationRunning = true;
+      animationStartTime = performance.now();
+      animationStartedAt = Date.now();
+      clearTimeout(stopTimer);
+      stopTimer = setTimeout(stopAnimationAndNotify, DURATION_MS);
+
       
       // Connection Check: Let the user know if SD is reachable from the browser
       fetch('http://127.0.0.1:7860/sdapi/v1/options', { method: 'GET', mode: 'cors' })
@@ -3598,6 +3828,12 @@ const startGestureApp = () => {
       video.play().catch(() => {});
 
       if (storyboard && storyboard.segments && storyboard.segments.length > 0) {
+        // The native Deforum renderer owns its motion transforms, strength
+        // schedules, numbered-frame output and ffmpeg MP4 creation. Do not
+        // run the legacy raw img2img feedback loop alongside it.
+        void startNativeDeforumRender(storyboard, fallbackSource || source);
+        return;
+
         let lastSegmentId = '';
         let isGenerating = false;
         let generationQueue = [];
@@ -3637,6 +3873,7 @@ const startGestureApp = () => {
         // instead of rendering one coherent scene. SDXL needs to stay at
         // 512+ to avoid this. Kept steps/cadence fast elsewhere instead.
         const RENDER = 512;
+        stitchRenderSize = RENDER;
         // Steps raised to 40 so the sampler has enough iterations even during
         // the low-denoising "locked" phases (e.g. 30 * 0.40 = 12 steps) to
         // fully resolve geometry instead of collapsing into a tiled pattern.
@@ -3685,7 +3922,7 @@ const startGestureApp = () => {
         // Every RESET_EVERY_N_FRAMES frames we skip the SD feedback layer
         // entirely and use a pure video frame, preventing the loop from
         // drifting into abstract grid/grain garbage over a long play session.
-        const buildInitFrame = async (w = RENDER, h = RENDER) => {
+        const buildInitFrame = async (w = RENDER, h = RENDER, warpScale = 1.0) => {
           try {
             const canvas = document.createElement('canvas');
             canvas.width = w; canvas.height = h;
@@ -3699,7 +3936,19 @@ const startGestureApp = () => {
               await new Promise((resolve) => {
                 const img = new Image();
                 img.onload = () => {
-                  ctx.drawImage(img, 0, 0, w, h);
+                  if (warpScale !== 1.0) {
+                    // Micro zoom warp: physically smears/stretches the
+                    // previous frame's pixels (Deforum zoom-schedule style)
+                    // so the figure visibly melts/distorts into the next
+                    // form instead of just cross-fading.
+                    ctx.save();
+                    ctx.translate(w / 2, h / 2);
+                    ctx.scale(warpScale, warpScale);
+                    ctx.drawImage(img, -w / 2, -h / 2, w, h);
+                    ctx.restore();
+                  } else {
+                    ctx.drawImage(img, 0, 0, w, h);
+                  }
                   hasBase = true;
                   resolve();
                 };
@@ -3806,22 +4055,43 @@ const startGestureApp = () => {
             // short window right at the prompt change, then snap back to the
             // locked/stable strength for the rest of the segment.
             const inTransitionWindow = framesSinceSegmentChange < TRANSITION_WINDOW_FRAMES;
-            const effectiveDenoising = inTransitionWindow ? TRANSITION_DENOISING : LOCKED_DENOISING;
+
+            // Morph-warp peak: the 2 frames right after the prompt change get
+            // a violent zoom in/out (smears the previous frame's pixels, a
+            // poor-man's version of Deforum's zoom-schedule morph) paired with
+            // a strength dip so the smeared structure survives and "melts"
+            // into the new form instead of SD just repainting over it.
+            const isWarpPeak = inTransitionWindow &&
+              (framesSinceSegmentChange === 1 || framesSinceSegmentChange === 2);
+            const warpScale = framesSinceSegmentChange === 1 ? 1.12
+              : framesSinceSegmentChange === 2 ? 0.90
+              : 1.0;
+
+            const effectiveDenoising = isWarpPeak ? 0.32
+              : inTransitionWindow ? TRANSITION_DENOISING
+              : LOCKED_DENOISING;
             // Noise tied to strength so the two schedules never fight each
             // other (a common cause of the "boiling water" bubble look) -
             // near-zero extra noise while locked, a small hint during the
             // fast transition window to help resolve the new geometry.
             const effectiveNoiseMultiplier = 0.6 + 0.5 * effectiveDenoising;
 
+            // During the warp peak, nudge the prompt toward a liquid/melting
+            // description so SD's own interpretation matches the physical
+            // pixel smear rather than fighting it with a "clean" pose.
+            const effectivePrompt = isWarpPeak
+              ? `${segment.prompt}, liquid melting transformation, dissolving and reforming, dynamic morph blur`
+              : segment.prompt;
+
             // Deforum feedback init: previous frame + live video guide.
-            const initFrame = await buildInitFrame(RENDER, RENDER);
+            const initFrame = await buildInitFrame(RENDER, RENDER, warpScale);
             const useImg2Img = !!initFrame;
             const endpoint = useImg2Img
               ? 'http://127.0.0.1:7860/sdapi/v1/img2img'
               : 'http://127.0.0.1:7860/sdapi/v1/txt2img';
 
             const payload = {
-              prompt: segment.prompt,
+              prompt: effectivePrompt,
               negative_prompt: segment.negativePrompt,
               steps: STEPS,
               width: RENDER,
@@ -3831,6 +4101,7 @@ const startGestureApp = () => {
               scheduler: SCHEDULER,
               restore_faces: RESTORE_FACES,
               seed: currentSeed,
+              save_images: true,
               override_settings: { CLIP_stop_at_last_layers: CLIP_SKIP },
               override_settings_restore_afterwards: false
             };
@@ -3883,8 +4154,10 @@ const startGestureApp = () => {
                   preload.src = newSrc;
                 });
 
+                const statusText = isWarpPeak ? 'SD Melting…' : inTransitionWindow ? 'SD Morphing…' : 'SD Deforum Flow';
+                const remainingMs = DURATION_MS - (performance.now() - (animationStartTime || performance.now()));
                 panel.querySelector('.deforum-preview-text').textContent =
-                  inTransitionWindow ? 'SD Morphing…' : 'SD Deforum Flow';
+                  `${statusText} (${Math.max(0, remainingMs / 1000).toFixed(0)}s left)`;
               }
             } else {
               panel.querySelector('.deforum-preview-text').textContent = 'SD Server Error';
@@ -3898,8 +4171,8 @@ const startGestureApp = () => {
         };
 
         const updateLoop = () => {
-          if (!panel.classList.contains('visible')) return;
-          
+          if (!panel.classList.contains('visible') || !isAnimationRunning) return;
+
           const refTime = (mainVid && !mainVid.paused) ? mainVid.currentTime : video.currentTime;
           const currentSeg = storyboard.segments.find(s => refTime >= s.startSec && refTime <= s.endSec);
           
@@ -3928,11 +4201,42 @@ const startGestureApp = () => {
       }
     };
 
+    panel.showMovie = (source, label = 'Merged Deforum Preview') => {
+      clearTimeout(stopTimer);
+      clearInterval(deforumPreviewTimer);
+      deforumPreviewTimer = null;
+      isAnimationRunning = false;
+      video.pause();
+      video.removeAttribute('src');
+      liveImg.classList.add('hidden');
+      liveImg.style.opacity = '0';
+      liveImgB.classList.add('hidden');
+      liveImgB.style.opacity = '0';
+      header.querySelector('.deforum-record-status').style.display = 'none';
+      resultPlayer.src = source;
+      resultPlayer.style.display = 'block';
+      resultPlayer.currentTime = 0;
+      panel.querySelector('.deforum-preview-dot').style.background = '#58d6ae';
+      panel.querySelector('.deforum-preview-text').textContent = label;
+      panel.classList.remove('hidden');
+      panel.classList.add('visible');
+      resultPlayer.play().catch(() => {});
+    };
+
     panel.hidePreview = hidePanel;
 
     deforumPreviewPanel = panel;
     return deforumPreviewPanel;
   }
+
+  window.__showDeforumMergedPreview = (
+    source = '/api/dev/merged-preview-result?file=sd3_exact_voiceover_real_20x20_slow.mp4',
+    label = 'Movie 3 English voice content + Movie 3 real frames'
+  ) => {
+    ensureDeforumPreviewPanel().showMovie(source, label);
+  };
+
+  window.__buildSilentVoiceOverStoryboard = (movie = 'Synthetic_Desires_3.mp4') => runStoryMode({ movie, silent: true });
 
   function getAiLogTextForCopy() {
     const parts = [];
@@ -13654,12 +13958,17 @@ const startGestureApp = () => {
   // Builds a slower noir-style voice-over grounded in the active movie.
   async function runStoryMode(options = {}) {
     const currentMovie = String(options?.movie || voiceManager?.currentMovie || '').trim();
+    const silentStoryboard = options?.silent === true || options?.speak === false;
     if (!currentMovie) {
       appendChatMessage('assistant', 'Load a movie first to run Voice Over.');
       return;
     }
-    if (!podcastEngine || !voiceManager) {
-      appendChatMessage('assistant', 'Voice Over requires the podcast engine.');
+    if (!voiceManager) {
+      appendChatMessage('assistant', 'Voice Over requires the voice manager.');
+      return;
+    }
+    if (!silentStoryboard && !podcastEngine) {
+      appendChatMessage('assistant', 'Spoken Voice Over requires the podcast engine.');
       return;
     }
 
@@ -13693,8 +14002,8 @@ const startGestureApp = () => {
     const targetSentenceCount = Math.max(30, Math.min(56, Math.round(targetDurationSec / 3.4)));
     const targetBeatCount = Math.max(10, Math.min(20, Math.round(targetDurationSec / 8.5)));
 
-    // Refresh podcast voice profiles for the current film before queuing beats
-    pickPodcastVoiceProfiles();
+    // Refresh podcast voice profiles only when this run will actually speak.
+    if (!silentStoryboard) pickPodcastVoiceProfiles();
 
     const pickVoiceOverAccentVoice = () => {
       const voices = Array.isArray(voiceManager?.voices) ? voiceManager.voices.filter(Boolean) : [];
@@ -13795,6 +14104,20 @@ const startGestureApp = () => {
         .replace(/\s+/g, ' ')
         .trim();
     };
+
+    const isEnglishStoryBeat = (text) => {
+      const normalized = String(text || '').trim();
+      if (!normalized) return false;
+      const frenchMarkers = /\b(le|la|les|des|une|dans|avec|pour|elle|comme|mais|sous|sur|voix|nuit|lumi[eè]re|corps|regard|m[ée]moire|silence|fran[cç]ais)\b/i;
+      const asciiLetters = normalized.match(/[a-z]/gi)?.length || 0;
+      const nonAsciiLetters = normalized.match(/[\u00c0-\u024f]/g)?.length || 0;
+      if (frenchMarkers.test(normalized) || nonAsciiLetters > Math.max(1, asciiLetters * 0.04)) return false;
+      return /\b(the|she|he|they|her|his|their|city|room|face|light|shadow|camera|body|memory|desire|night|glass|skin|silence)\b/i.test(normalized);
+    };
+
+    const filterEnglishBeats = (beats = []) => beats
+      .map((beat) => storyifyBeat(beat))
+      .filter((beat) => isEnglishStoryBeat(beat) && !isCriticVoice(beat));
 
     // Post-process a beat: add breath markers
     const storyifyBeat = (text) => {
@@ -13909,11 +14232,13 @@ const startGestureApp = () => {
         const fs = firstSentence(text);
         if (seenSentences.has(fs)) continue; // first sentence already seen — skip
         allSentences(text).forEach(s => seenSentences.add(s)); // register all sentences
-        beats.push(storyifyBeat(text));
+        const beat = storyifyBeat(text);
+        if (!isEnglishStoryBeat(beat)) continue;
+        beats.push(beat);
       }
 
       // Fill remaining from podcast pipeline (DICT/cloud) with same sentence-level dedup.
-      if (beats.length < beatCount) {
+      if (!silentStoryboard && beats.length < beatCount) {
         for (let i = 0; beats.length < beatCount && i < beatCount * 3; i++) {
           const result = await buildPodcastAutonomousMuseReply(question, { movie: currentMovie, ctx });
           const raw = result ? String(result.response || '').trim() : '';
@@ -13922,7 +14247,9 @@ const startGestureApp = () => {
           const fs = firstSentence(text);
           if (seenSentences.has(fs)) continue;
           allSentences(text).forEach(s => seenSentences.add(s));
-          beats.push(storyifyBeat(text));
+          const beat = storyifyBeat(text);
+          if (!isEnglishStoryBeat(beat)) continue;
+          beats.push(beat);
         }
       }
 
@@ -13945,7 +14272,9 @@ const startGestureApp = () => {
           const fs = firstSentence(text);
           if (seenSentences.has(fs)) continue;
           allSentences(text).forEach(s => seenSentences.add(s));
-          beats.push(storyifyBeat(text));
+          const beat = storyifyBeat(text);
+          if (!isEnglishStoryBeat(beat)) continue;
+          beats.push(beat);
         }
       }
 
@@ -13964,6 +14293,7 @@ const startGestureApp = () => {
     };
 
     const queueStoryBeat = (text, voiceProfile, isLast = false) => {
+      if (silentStoryboard) return;
       const sentences = text.match(/[^.!?…]+[.!?…]+(?:\s|$)/g);
       if (!sentences || sentences.length <= 1) {
         podcastEngine.queueLine(text.trim(), 'hostB', {
@@ -13983,13 +14313,16 @@ const startGestureApp = () => {
       });
     };
 
-    // Reveal chat panel
-    revealAiChatPanel({ focusInput: false });
-    selectedConversationSurfaceMode = 'podcast';
-    updateConversationModeUi();
-
-    appendChatMessage('assistant', `Starting Voice Over for ${filmTitle}.`);
-    showAiSpeech('Voice Over starting', true);
+    if (silentStoryboard) {
+      appendChatMessage('assistant', `Building English movie voice content for ${filmTitle}.`);
+    } else {
+      // Reveal chat panel only for spoken narration.
+      revealAiChatPanel({ focusInput: false });
+      selectedConversationSurfaceMode = 'podcast';
+      updateConversationModeUi();
+      appendChatMessage('assistant', `Starting Voice Over for ${filmTitle}.`);
+      showAiSpeech('Voice Over starting', true);
+    }
 
     const allStoryBeats = [];
     for (let index = 0; index < activePrompts.length; index++) {
@@ -13999,18 +14332,29 @@ const startGestureApp = () => {
       let segmentBeats = [];
       const cloudReply = await callMuseCloud(prompt, targetSentences);
       if (cloudReply) {
-        segmentBeats = splitBeats(cloudReply, 2);
+        segmentBeats = filterEnglishBeats(splitBeats(cloudReply, 2));
       } else {
-        segmentBeats = await callMuseLocal(prompt, targetLocalBeats);
+        segmentBeats = filterEnglishBeats(await callMuseLocal(prompt, targetLocalBeats));
       }
       if (!segmentBeats.length) continue;
       allStoryBeats.push(...segmentBeats);
     }
 
-    allStoryBeats.forEach((beat, index) => {
-      const profile = STORY_VOICE_PROFILES[index % STORY_VOICE_PROFILES.length];
-      queueStoryBeat(beat, profile, index === allStoryBeats.length - 1);
-    });
+    if (silentStoryboard && !allStoryBeats.length) {
+      allStoryBeats.push(
+        `She stands inside the pressure of the darkroom, held by red light and the quiet violence of exposure.`,
+        `The camera does not forgive her; it keeps the trace of skin, hesitation, and consent breaking apart under the image.`,
+        `Around her, the room becomes a chemical bath where memory rises slowly and every shadow feels touched by a hand.`,
+        `By the final image, she is not explained; she remains near the lens, real and unresolved, carrying the wound of being seen.`
+      );
+    }
+
+    if (!silentStoryboard) {
+      allStoryBeats.forEach((beat, index) => {
+        const profile = STORY_VOICE_PROFILES[index % STORY_VOICE_PROFILES.length];
+        queueStoryBeat(beat, profile, index === allStoryBeats.length - 1);
+      });
+    }
 
     const storyFull = intraDedup(allStoryBeats.join(' '));
     lastVoiceOverStoryboard = allStoryBeats.length
@@ -14035,8 +14379,10 @@ const startGestureApp = () => {
           recentPodcastHostAnswerLines = rememberRecentPodcastLine(recentPodcastHostAnswerLines, sentence);
         })
       );
-      appendChatMessage('assistant', '🎙 Voice Over saved to brain memory.');
+      appendChatMessage('assistant', silentStoryboard ? 'English movie voice content saved to brain memory.' : 'Voice Over saved to brain memory.');
     }
+
+    return lastVoiceOverStoryboard;
   }
 
   async function submitChatFromInput() {
@@ -14906,15 +15252,16 @@ const startGestureApp = () => {
     movieContentRotationDirectList = directMovies;
     movieContentRotationPrompts = items;
     movieContentRotationIndex = 0;
+    let intervalMs = Math.max(5, Number(options?.intervalSeconds || 30)) * 1000;
 
     if (isPlayAll3Min && directMovies.length) {
       // Sequential loop: each movie plays its slot, AI answer finishes, then next movie
       void runPlayAll3MinLoop(directMovies);
       const slotSec = Math.round(PLAY_ALL_TOTAL_MS / directMovies.length / 1000);
+      intervalMs = slotSec * 1000;
       appendChatMessage('assistant', `Started Play All: ${directMovies.length} movies × ~${slotSec}s = 4.5 min total. Waits for AI answer before each transition.`);
     } else {
       movieContentRotationMode = (rawMode === 'ended') ? 'ended' : 'interval';
-      const intervalMs = Math.max(5, Number(options?.intervalSeconds || 30)) * 1000;
 
       if (options?.immediate !== false) {
         void runMovieRotationStep(options);
@@ -14950,8 +15297,8 @@ const startGestureApp = () => {
         <option value="interval">Every N seconds</option>
         <option value="ended">After movie ends</option>
       </select>
-      <label class="movie-rotation-panel__label" id="movie-rotation-movies-label" for="movie-rotation-movies">Movies (e.g. 1,3,4)</label>
-      <input id="movie-rotation-movies" class="movie-rotation-panel__input" type="text" placeholder="1,3,4" value="1,3,4" />
+      <label class="movie-rotation-panel__label" id="movie-rotation-movies-label" for="movie-rotation-movies">Movies (e.g. 3)</label>
+      <input id="movie-rotation-movies" class="movie-rotation-panel__input" type="text" placeholder="3" value="3" />
       <label class="movie-rotation-panel__label" for="movie-rotation-interval">Interval (sec)</label>
       <input id="movie-rotation-interval" class="movie-rotation-panel__input" type="number" min="5" step="5" value="30" />
       <label class="movie-rotation-panel__label" for="movie-rotation-prompts">Content Prompts</label>
