@@ -56,6 +56,10 @@ web-build/
 # Vite
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
+vite-dev.log
+
+# Local render outputs
+outputs/
 
 # Warm-brain capture exports (local only — move to warm-brain-captures/ before running injectWarmBrainSeeds.mjs)
 warm-brain-captures/*.json
