@@ -61,6 +61,9 @@ vite-dev.log
 # Local render outputs
 outputs/
 
+# Local backup archives
+backups/
+
 # Warm-brain capture exports (local only — move to warm-brain-captures/ before running injectWarmBrainSeeds.mjs)
 warm-brain-captures/*.json
 

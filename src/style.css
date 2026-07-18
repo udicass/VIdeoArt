@@ -2884,9 +2884,11 @@ body.chat-snapshot-open {
 
 .deforum-preview-video-wrap {
   width: 100%;
-  aspect-ratio: 16/9;
+  flex: 1 1 auto;
+  min-height: 0;
   background: #000;
   position: relative;
+  overflow: hidden;
 }
 
 .deforum-preview-video {
@@ -2896,12 +2898,16 @@ body.chat-snapshot-open {
 }
 
 .deforum-preview-status {
+  flex: 0 0 auto;
+  min-height: 34px;
   padding: 8px 12px;
   font-size: 0.7rem;
   color: rgba(255, 255, 255, 0.7);
   display: flex;
   align-items: center;
   gap: 6px;
+  background: rgba(5, 8, 12, 0.92);
+  border-top: 1px solid rgba(91, 220, 182, 0.18);
 }
 
 .deforum-live-config {

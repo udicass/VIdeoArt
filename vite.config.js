@@ -127,6 +127,47 @@ export default defineConfig(({ mode }) => {
         configureServer(server) {
           Object.assign(process.env, env);
 
+          server.middlewares.use(createApiMiddleware('/api/dev/style-frame-preview', async (req, res) => {
+            const url = new URL(req.url, 'http://localhost');
+            const forgeRoot = env.SD_FORGE_ROOT || 'D:\\SD_Deforum_Fresh';
+            const requestedDate = String(url.searchParams.get('date') || new Date().toISOString().slice(0, 10));
+            const requestedFolder = String(url.searchParams.get('folder') || '').split(/[\\/]/).pop();
+            if (requestedFolder && !/^[\w.-]+$/i.test(requestedFolder)) {
+              res.status(400).json({ error: 'Invalid style frame folder name.' });
+              return;
+            }
+            const framesDir = requestedFolder
+              ? join(forgeRoot, 'outputs', 'img2img-images', requestedDate, requestedFolder)
+              : join(forgeRoot, 'outputs', 'img2img-images', requestedDate);
+            if (!existsSync(framesDir)) {
+              res.status(404).json({ error: `Style frame folder not found: ${framesDir}` });
+              return;
+            }
+
+            const safeFile = String(url.searchParams.get('file') || '').split(/[\\/]/).pop();
+            if (safeFile) {
+              if (!/^(?:\d{5}-[\w.-]+|voiceover_fresh_\d{4})\.png$/i.test(safeFile)) {
+                res.status(400).json({ error: 'Invalid style frame file name.' });
+                return;
+              }
+              const framePath = join(framesDir, safeFile);
+              if (!existsSync(framePath)) {
+                res.status(404).json({ error: `Style frame not found: ${safeFile}` });
+                return;
+              }
+              res.statusCode = 200;
+              res.setHeader('Content-Type', 'image/png');
+              res.setHeader('Cache-Control', 'no-store');
+              createReadStream(framePath).pipe(res);
+              return;
+            }
+
+            const frames = readdirSync(framesDir)
+              .filter((file) => /^(?:\d{5}-[\w.-]+|voiceover_fresh_\d{4})\.png$/i.test(file))
+              .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+            res.status(200).json({ ok: true, date: requestedDate, folder: requestedFolder, frames });
+          }));
+
           if (hasLocalGeminiProxy) {
             const geminiHandler = require('./api/gemini.js');
             server.middlewares.use(createApiMiddleware('/api/gemini', geminiHandler, { parseBody: true }));
