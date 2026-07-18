@@ -92,6 +92,7 @@ export class PodcastEngine {
       sessionId: this.sessionId,
       kind: options.kind || 'general',
       batchNumber: options.batchNumber || 0,
+      context: options.context || 'podcast',
       voiceOpts: options.voiceOpts || null,
       pauseAfterMs: Number.isFinite(options.pauseAfterMs) && options.pauseAfterMs > 0 ? options.pauseAfterMs : 0
     };
@@ -237,7 +238,7 @@ export class PodcastEngine {
       ...profile,
       ...(next.voiceOpts || {}),
       speaker: next.speaker,
-      context: 'podcast',
+      context: next.context || 'podcast',
       onEnd: () => {
         clearTimeout(watchdog);
         safeDrainEnd();

@@ -3653,7 +3653,7 @@ body.chat-snapshot-open {
 }
 
 #playlist-panel.playlist-collapsed {
-  max-height: 42px !important;
+  max-height: 42px !
   overflow: hidden !important;
   padding-bottom: 0 !important;
 }

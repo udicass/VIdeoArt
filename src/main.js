@@ -3667,6 +3667,8 @@ const startGestureApp = () => {
     const hidePanel = () => {
       panel.classList.add('hidden');
       panel.classList.remove('visible');
+      clearInterval(panel.crossfadeTimer);
+      clearInterval(panel.crossfadePlaybackTimer);
       video.pause();
       video.src = '';
       if (isAnimationRunning) {
@@ -4204,6 +4206,7 @@ const startGestureApp = () => {
     panel.showMovie = (source, label = 'Merged Deforum Preview') => {
       clearTimeout(stopTimer);
       clearInterval(deforumPreviewTimer);
+      clearInterval(panel.crossfadeTimer);
       deforumPreviewTimer = null;
       isAnimationRunning = false;
       video.pause();
@@ -4223,6 +4226,110 @@ const startGestureApp = () => {
       resultPlayer.play().catch(() => {});
     };
 
+    panel.showCrossfadePlaylist = async () => {
+      const clips = [
+        { file: 'sd3_DEFOURM_18X_RIGHT300_FADEOUT_TO0_CONTENT75_TOP_90SEC.mp4', label: 'Deforum fade out / content 75%' },
+        { file: 'sd3_DEFOURM_18X_RIGHT300_CONTENT75_TOP_90SEC.mp4', label: 'Deforum 18x / content 75%' },
+        { file: 'sd3_DEFOURM_18X_RIGHT300_CONTENT70_TOP_90SEC.mp4', label: 'Deforum 18x / content 70%' },
+        { file: 'sd3_DEFOURM_18X_RIGHT300_CONTENT80_TOP_90SEC.mp4', label: 'Deforum 18x / content 80%' }
+      ];
+      const switchEveryMs = 50000;
+      const fadeMs = 2500;
+      let playlistIndex = 0;
+      let activeVideo = resultPlayer;
+      let incomingVideo = video;
+
+      clearTimeout(stopTimer);
+      clearInterval(deforumPreviewTimer);
+      clearInterval(panel.crossfadeTimer);
+      clearInterval(panel.crossfadePlaybackTimer);
+      isAnimationRunning = false;
+      liveImg.classList.add('hidden');
+      liveImgB.classList.add('hidden');
+      promptOverlay.style.display = 'none';
+      header.querySelector('.deforum-record-status').style.display = 'none';
+
+      [resultPlayer, video].forEach((player, index) => {
+        player.autoplay = true;
+        player.muted = true;
+        player.loop = true;
+        player.playsInline = true;
+        player.controls = index === 0;
+        player.style.display = 'block';
+        player.style.transition = `opacity ${fadeMs}ms ease`;
+        player.style.opacity = index === 0 ? '1' : '0';
+        player.style.zIndex = index === 0 ? '21' : '20';
+      });
+
+      const loadClip = async (player, clip) => {
+        player.src = `/api/dev/merged-preview-result?file=${encodeURIComponent(clip.file)}&t=${Date.now()}`;
+        await new Promise((resolve, reject) => {
+          const timeout = setTimeout(() => reject(new Error('Preview metadata timed out.')), 15000);
+          player.onloadedmetadata = () => { clearTimeout(timeout); resolve(); };
+          player.onerror = () => { clearTimeout(timeout); reject(new Error(`Could not load ${clip.file}.`)); };
+        });
+        player.currentTime = 0;
+        const playNow = () => player.play().catch((error) => {
+          panel.querySelector('.deforum-preview-text').textContent = error.message || 'Tap preview to play';
+        });
+        await playNow();
+        player.oncanplay = playNow;
+        player.onpause = () => {
+          if (panel.classList.contains('visible') && player.readyState >= 2 && !player.ended) {
+            setTimeout(playNow, 120);
+          }
+        };
+      };
+
+      const updateLabel = () => {
+        panel.querySelector('.deforum-preview-text').textContent = `Movie ${playlistIndex + 1}/${clips.length}: ${clips[playlistIndex].label} - next fade in 50s`;
+      };
+
+      panel.classList.remove('hidden');
+      panel.classList.add('visible');
+
+      try {
+        await loadClip(activeVideo, clips[playlistIndex]);
+        updateLabel();
+      } catch (error) {
+        panel.querySelector('.deforum-preview-text').textContent = error.message;
+        return;
+      }
+
+      panel.crossfadeTimer = setInterval(async () => {
+        const nextIndex = (playlistIndex + 1) % clips.length;
+        incomingVideo.style.transition = 'none';
+        incomingVideo.style.opacity = '0';
+        incomingVideo.style.zIndex = '22';
+        try {
+          await loadClip(incomingVideo, clips[nextIndex]);
+          requestAnimationFrame(() => {
+            incomingVideo.style.transition = `opacity ${fadeMs}ms ease`;
+            incomingVideo.style.opacity = '1';
+          });
+          setTimeout(() => {
+            activeVideo.pause();
+            activeVideo.style.opacity = '0';
+            activeVideo.style.zIndex = '20';
+            [activeVideo, incomingVideo] = [incomingVideo, activeVideo];
+            playlistIndex = nextIndex;
+            updateLabel();
+          }, fadeMs);
+        } catch (error) {
+          panel.querySelector('.deforum-preview-text').textContent = error.message;
+        }
+      }, switchEveryMs);
+
+      panel.crossfadePlaybackTimer = setInterval(() => {
+        if (!panel.classList.contains('visible')) return;
+        const currentPlayer = activeVideo;
+        if (currentPlayer?.readyState >= 2 && currentPlayer.paused && !currentPlayer.ended) {
+          currentPlayer.play().catch(() => {});
+        }
+      }, 1000);
+
+    };
+
     panel.hidePreview = hidePanel;
 
     deforumPreviewPanel = panel;
@@ -4235,6 +4342,8 @@ const startGestureApp = () => {
   ) => {
     ensureDeforumPreviewPanel().showMovie(source, label);
   };
+
+  window.__showDeforumCrossfadePlaylist = () => ensureDeforumPreviewPanel().showCrossfadePlaylist();
 
   window.__buildSilentVoiceOverStoryboard = (movie = 'Synthetic_Desires_3.mp4') => runStoryMode({ movie, silent: true });
 
@@ -6753,6 +6862,10 @@ const startGestureApp = () => {
 
   async function startPublicPodcastAiConversation(options = {}) {
     if (!publicPodcastAiEnabled || !podcastEngine || !voiceManager) return false;
+    if (storyVoiceOverEnabled) {
+      stopPublicPodcastAiConversation();
+      return false;
+    }
     selectedConversationSurfaceMode = 'podcast';
 
     revealAiChatPanel({ focusInput: false });
@@ -13889,7 +14002,7 @@ const startGestureApp = () => {
     if (!btnStoryMode) return;
     btnStoryMode.classList.toggle('active', storyVoiceOverEnabled);
     btnStoryMode.classList.toggle('telling', storyVoiceOverInFlight);
-    btnStoryMode.disabled = storyVoiceOverInFlight;
+    btnStoryMode.disabled = false;
     btnStoryMode.textContent = storyVoiceOverInFlight
       ? 'VO Running…'
       : (storyVoiceOverEnabled ? 'Voice Over On' : 'Voice Over');
@@ -13900,13 +14013,15 @@ const startGestureApp = () => {
 
   async function triggerStoryVoiceOverForCurrentMovie(options = {}) {
     if (!storyVoiceOverEnabled || storyVoiceOverInFlight) return false;
-    const currentMovie = String(options?.movie || voiceManager?.currentMovie || '').trim();
+    const currentMovie = String(options?.movie || 'Synthetic_Desires_3.mp4').trim();
     if (!currentMovie) return false;
     if (!options.force && storyVoiceOverLastMovie === currentMovie) return false;
     storyVoiceOverInFlight = true;
     storyVoiceOverQueuedMovie = '';
+    stopPublicPodcastAiConversation();
     updateStoryModeButtonState();
     try {
+      void ensureDeforumPreviewPanel().showCrossfadePlaylist();
       await runStoryMode({ movie: currentMovie });
       storyVoiceOverLastMovie = currentMovie;
       return true;
@@ -13941,16 +14056,19 @@ const startGestureApp = () => {
       storyVoiceOverEnabled = !storyVoiceOverEnabled;
       if (!storyVoiceOverEnabled) {
         storyVoiceOverQueuedMovie = '';
+        ensureDeforumPreviewPanel().hidePreview();
+        stopPublicPodcastAiConversation();
         updateStoryModeButtonState();
         appendChatMessage('assistant', 'Voice Over off.');
         showAiSpeech('Voice Over off', true);
         return;
       }
       storyVoiceOverLastMovie = '';
+      stopPublicPodcastAiConversation();
       updateStoryModeButtonState();
       appendChatMessage('assistant', 'Voice Over on.');
       showAiSpeech('Voice Over on', true);
-      await triggerStoryVoiceOverForCurrentMovie({ force: true });
+      await triggerStoryVoiceOverForCurrentMovie({ movie: 'Synthetic_Desires_3.mp4', force: true });
     });
   }
 
@@ -13971,23 +14089,6 @@ const startGestureApp = () => {
       appendChatMessage('assistant', 'Spoken Voice Over requires the podcast engine.');
       return;
     }
-
-    // Trigger deforum preview panel after 10 seconds of Voice Over
-    setTimeout(() => {
-      if (storyVoiceOverEnabled && storyVoiceOverInFlight && currentMovie) {
-        const panel = ensureDeforumPreviewPanel();
-        const isSdMovie = /synthetic_desires_[1-7]/i.test(currentMovie);
-        
-        // Strategy: Look for a pre-rendered deforum version first, 
-        // otherwise show current with SD prompt overlay
-        const deforumMovieName = currentMovie.replace(/\.mp4$/i, '_deforum.mp4');
-        const source = isSdMovie ? `${R2_BASE}/${deforumMovieName}` : currentMovie;
-        const originalSource = isSdMovie ? `${R2_BASE}/${currentMovie}` : currentMovie;
-        
-        // Validate source exists (simulated check by trying to load it)
-        panel.showPreview(source, 'SD Deforum Live', lastVoiceOverStoryboard, originalSource);
-      }
-    }, 10000);
 
     const ctx = getFilmContext(currentMovie);
     const theme = ctx?.theme || currentMovie;
@@ -14293,11 +14394,12 @@ const startGestureApp = () => {
     };
 
     const queueStoryBeat = (text, voiceProfile, isLast = false) => {
-      if (silentStoryboard) return;
+      if (silentStoryboard || !isEnglishStoryBeat(text)) return;
       const sentences = text.match(/[^.!?…]+[.!?…]+(?:\s|$)/g);
       if (!sentences || sentences.length <= 1) {
         podcastEngine.queueLine(text.trim(), 'hostB', {
           force: false,
+          context: 'voice-over',
           voiceOpts: voiceProfile,
           pauseAfterMs: isLast ? FINAL_PAUSE_MS : BEAT_PAUSE_MS
         });
@@ -14307,6 +14409,7 @@ const startGestureApp = () => {
         const isLastSentence = idx === sentences.length - 1;
         podcastEngine.queueLine(sentence.trim(), 'hostB', {
           force: false,
+          context: 'voice-over',
           voiceOpts: voiceProfile,
           pauseAfterMs: isLastSentence ? (isLast ? FINAL_PAUSE_MS : BEAT_PAUSE_MS) : SENTENCE_PAUSE_MS
         });
@@ -14316,9 +14419,9 @@ const startGestureApp = () => {
     if (silentStoryboard) {
       appendChatMessage('assistant', `Building English movie voice content for ${filmTitle}.`);
     } else {
-      // Reveal chat panel only for spoken narration.
+      // Voice Over uses the narration queue, not the public Podcast conversation.
       revealAiChatPanel({ focusInput: false });
-      selectedConversationSurfaceMode = 'podcast';
+      selectedConversationSurfaceMode = 'chat';
       updateConversationModeUi();
       appendChatMessage('assistant', `Starting Voice Over for ${filmTitle}.`);
       showAiSpeech('Voice Over starting', true);
@@ -15008,7 +15111,6 @@ const startGestureApp = () => {
 
       enterVideoMode();
       renderPlayPauseButton(true);
-      scheduleStoryVoiceOverForMovie(movieFileName);
       if (shouldResumePublicPodcastAiAfterMovieChange) {
         resumePublicPodcastAiAfterMovieChange(movieFileName);
       }
@@ -15355,7 +15457,6 @@ const startGestureApp = () => {
   window.rankMoviesByContent = rankMoviesByContent;
   window.startMovieContentRotation = startMovieContentRotation;
   window.stopMovieContentRotation = stopMovieContentRotation;
-  createMovieRotationPanel();
 
   // ─── EVENT LISTENERS ───
 

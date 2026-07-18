@@ -5484,12 +5484,29 @@ Rules:
     }
 
     speak(text, options = {}) {
+        const isVoiceOver = options?.context === 'voice-over';
+        if (isVoiceOver) {
+            const requestedVoice = options?.voice;
+            const englishVoice = /^en/i.test(String(requestedVoice?.lang || ''))
+                ? requestedVoice
+                : this.voices.find((voice) => /^en/i.test(String(voice?.lang || '')));
+            if (!englishVoice) {
+                // Voice Over never falls back to the browser's French default.
+                queueMicrotask(() => {
+                    options?.onEnd?.();
+                    this.onSpeakEnd?.(options, { error: true });
+                });
+                return;
+            }
+            options = { ...options, voice: englishVoice };
+        }
+
         // Intercept hostB (Muse) speech when current movie has Gemini TTS enabled
         const isHostB = options?.speaker === 'hostB';
         const onlyOneUsableVoice = Array.isArray(this.voices) && this.voices.filter(Boolean).length <= 1;
         const geminiTtsEnabled = Boolean(this.currentMovieBrain?.voiceProfile?.geminiTts?.enabled);
         const forceDistinctMuseVoice = Boolean(isHostB && options?.context === 'podcast' && onlyOneUsableVoice);
-        if (isHostB && (geminiTtsEnabled || forceDistinctMuseVoice)) {
+        if (!isVoiceOver && isHostB && (geminiTtsEnabled || forceDistinctMuseVoice)) {
             // Cancel any active browser TTS before switching to Gemini TTS
             try {
                 if (this.synthesis.speaking || this.synthesis.pending) {
