@@ -42,6 +42,12 @@
     },
     "api/gemini-tts.js": {
       "maxDuration": 15
+    },
+    "api/paypal-create-order.js": {
+      "maxDuration": 30
+    },
+    "api/paypal-capture.js": {
+      "maxDuration": 30
     }
   }
 }

@@ -3,6 +3,7 @@
  * Orchestrates hand tracking, 3D scene, video import, and two-hand gestures.
  */
 import './style.css';
+import { inject } from '@vercel/analytics';
 import { HandTracker } from './handTracker.js';
 import { Scene3D } from './scene3d.js';
 import { WebcamOverlay } from './webcamOverlay.js';
@@ -16,16 +17,135 @@ import { AiEngine } from './core/aiEngine.js';
 import { MemorySynthesizer } from './core/memorySynthesizer.js';
 import { getMemoryCount, saveMemory, loadMemories } from './brainMemory.js';
 import { getAvailableLocalLlmBackends, getLocalLlmBackend, getLocalLlmStatus, isOllamaHttpsBlocked, refreshLocalLlmStatus, setLocalLlmBackend } from './ollamaClient.js';
-import { movieBrains, resolveMovieBrain } from './movieBrains.js';
+import { resolveMovieBrain } from './movieBrains.js';
 import { buildMovieForgePack, formatMovieForgePromptText } from './movieForge.js';
 import { getMovieRetrievalContext } from './movieSceneRetrieval.js';
-import { buildVoiceOverStoryboard, formatVoiceOverStoryboardSchedule } from './voiceOverStoryboard.js';
+import { PrintModule } from './print/printModule.js';
+
+inject();
 
 console.log('main.js loaded.');
 
+let accessGateInitialized = false;
+let gestureAppStarted = false;
+
 // Ensure all code runs after DOM is loaded
-const startGestureApp = () => {
+const startGestureApp = async () => {
   console.log('startGestureApp called.');
+  const accessGate = document.getElementById('access-gate');
+  const accessForm = document.getElementById('access-form');
+  const accessEmail = document.getElementById('access-email');
+  const accessSubmit = document.getElementById('access-submit');
+  const accessStatus = document.getElementById('access-status');
+  const accessMark = document.getElementById('access-mark');
+  const accessSupportLink = document.getElementById('access-support-link');
+
+  accessSupportLink?.addEventListener('click', (event) => {
+    event.preventDefault();
+    const supportAddress = ['udicass', 'gmail.com'].join('@');
+    const supportSubject = 'Hello Udi, Indeed Access to your site, Thanks';
+    window.location.href = `mailto:${supportAddress}?subject=${encodeURIComponent(supportSubject)}`;
+  });
+
+  const accessStorageKey = 'synthetic-desires.access';
+  const hasAccess = window.localStorage.getItem(accessStorageKey) === 'granted'
+    || window.sessionStorage.getItem(accessStorageKey) === 'granted';
+  if (hasAccess) {
+    window.localStorage.setItem(accessStorageKey, 'granted');
+    if (gestureAppStarted) return;
+    gestureAppStarted = true;
+    accessGate?.remove();
+  }
+  if (!hasAccess && accessForm) {
+    if (accessGateInitialized) return;
+    accessGateInitialized = true;
+
+    const grantAccess = () => {
+      window.localStorage.setItem(accessStorageKey, 'granted');
+      window.sessionStorage.removeItem(accessStorageKey);
+      accessGate?.classList.add('access-granted');
+      window.setTimeout(() => accessGate?.remove(), 520);
+      window.setTimeout(() => startGestureApp(), 520);
+    };
+
+    const tryDirectAccess = async () => {
+      try {
+        const response = await fetch('/api/access', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({})
+        });
+        if (!response.ok) return false;
+        const payload = await response.json().catch(() => ({}));
+        if (accessStatus) {
+          accessStatus.textContent = payload?.name ? `Welcome, ${payload.name}!` : 'Welcome!';
+          accessStatus.classList.add('access-status-approved');
+        }
+        window.setTimeout(grantAccess, 420);
+        return true;
+      } catch {
+        return false;
+      }
+    };
+
+    if (await tryDirectAccess()) return;
+
+    const shouldPlayAccessMovies = !window.matchMedia('(max-width: 640px)').matches
+      && !window.matchMedia('(prefers-reduced-motion: reduce)').matches
+      && !navigator.connection?.saveData;
+    if (shouldPlayAccessMovies) {
+      const loadAccessMovies = () => {
+        accessGate?.querySelectorAll('.access-film-strip video[data-src]').forEach((video) => {
+          video.src = video.dataset.src;
+          video.preload = 'auto';
+          video.defaultPlaybackRate = 0.65;
+          video.playbackRate = 0.65;
+          video.load();
+          video.play().catch(() => {});
+        });
+      };
+      if ('requestIdleCallback' in window) {
+        window.requestIdleCallback(loadAccessMovies, { timeout: 800 });
+      } else {
+        window.setTimeout(loadAccessMovies, 200);
+      }
+    }
+
+    let accessMarkClicks = 0;
+    accessMark?.addEventListener('click', () => {
+      accessMarkClicks += 1;
+      accessMark.classList.remove('access-mark-pulse');
+      window.requestAnimationFrame(() => accessMark.classList.add('access-mark-pulse'));
+      if (accessMarkClicks >= 10) grantAccess();
+    });
+
+    accessForm.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      const email = String(accessEmail?.value || '').trim().toLowerCase();
+      if (accessStatus) accessStatus.textContent = 'Checking invitation...';
+      if (accessSubmit) accessSubmit.disabled = true;
+      try {
+        const response = await fetch('/api/access', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email })
+        });
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(payload?.error || 'Access could not be verified.');
+        if (accessStatus) {
+          accessStatus.textContent = payload?.name ? `Welcome, ${payload.name}!` : 'Welcome!';
+          accessStatus.classList.add('access-status-approved');
+        }
+        window.setTimeout(grantAccess, 1600);
+      } catch (error) {
+        if (accessStatus) accessStatus.textContent = error?.message || 'Access could not be verified.';
+        if (accessSubmit) accessSubmit.disabled = false;
+      }
+    });
+    accessEmail?.focus();
+    return;
+  }
+  accessGate?.remove();
   // ─── DOM REFS ───
   const loadingScreen = document.getElementById('loading-screen');
   const loaderStatus = document.getElementById('loader-status');
@@ -44,10 +164,19 @@ const startGestureApp = () => {
 
   const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini|EdgA|EdgiOS/i.test(navigator.userAgent);
   const launchParams = new URLSearchParams(window.location.search);
+  const chinaGateOverride = String(launchParams.get('chinaGate') || '').trim().toLowerCase();
+  const chinaRouteOverride = String(launchParams.get('chinaRoute') || '').trim().toLowerCase();
   const isMuseCardLaunch = launchParams.get('muse') === '1'
     || launchParams.get('musecard') === '1'
     || launchParams.get('card') === 'muse';
-  const publicPodcastAiHosts = new Set(['gesture-3d.vercel.app', 'gesture-3d-beta.vercel.app', 'localhost', '127.0.0.1']);
+  const publicPodcastAiHosts = new Set([
+    'gesture-3d.vercel.app',
+    'gesture-3d-beta.vercel.app',
+    'syntheticdesires.art',
+    'www.syntheticdesires.art',
+    'localhost',
+    '127.0.0.1'
+  ]);
   const publicPodcastAiEnabled = publicPodcastAiHosts.has(window.location.hostname);
   const museLaunchMode = String(launchParams.get('mode') || '').toLowerCase();
   const museFullParam = String(launchParams.get('full') || '').toLowerCase();
@@ -149,6 +278,13 @@ const startGestureApp = () => {
   const aiModeCloud = document.getElementById('ai-mode-cloud');
   const aiModeGemma = document.getElementById('ai-mode-gemma');
   const aiModeSplit = document.getElementById('ai-mode-split');
+  const SPLIT_MODE_UNLOCK_CLICKS = 5;
+  let splitModeUnlockClicks = 0;
+  let splitModeUnlocked = false;
+  let brainModeUnlockClicks = 0;
+  let brainModeUnlocked = false;
+  let cloudModeUnlockClicks = 0;
+  let cloudModeUnlocked = false;
   const btnTrainCloud = document.getElementById('btn-train-cloud');
   const btnTrainGemmaStrict = document.getElementById('btn-train-gemma-strict');
   const btnFullRun = document.getElementById('btn-full-run');
@@ -187,6 +323,214 @@ const startGestureApp = () => {
     if (publicPodcastAiExpiryTimer) {
       clearInterval(publicPodcastAiExpiryTimer);
       publicPodcastAiExpiryTimer = null;
+    }
+  }
+
+  const CHINA_GATE_SOURCE_HOST = 'gesture-3d-beta.vercel.app';
+  const LOCAL_CHINA_MOVIE_BASE = '/china-media';
+  const DEFAULT_MOVIE_CDN_BASE = String(
+    import.meta.env.VITE_MOVIE_CDN_BASE || 'https://pub-3a3ec970180e4d9db03559eb82c9b828.r2.dev'
+  ).replace(/\/+$/, '');
+  const CHINA_MOVIE_CDN_BASE = String(import.meta.env.VITE_MOVIE_CDN_BASE_CHINA || LOCAL_CHINA_MOVIE_BASE).trim().replace(/\/+$/, '');
+  const CHINA_ALT_URL = String(import.meta.env.VITE_CHINA_ALT_URL || 'https://www.syntheticdesires.art/').trim();
+  const CHINA_GATE_MODE = String(import.meta.env.VITE_CHINA_GATE_MODE || 'redirect').trim().toLowerCase();
+  const CHINA_GATE_TITLE = String(import.meta.env.VITE_CHINA_GATE_TITLE || 'Mainland China Access').trim() || 'Mainland China Access';
+  const CHINA_GATE_MESSAGE = String(
+    import.meta.env.VITE_CHINA_GATE_MESSAGE
+    || 'We detected that you may be visiting from Mainland China. If playback is unstable, you can open the China-optimized site instead.'
+  ).trim();
+  const CHINA_GATE_BUTTON_LABEL = String(import.meta.env.VITE_CHINA_GATE_BUTTON_LABEL || 'Open China site').trim() || 'Open China site';
+  const CHINA_GATE_DISMISS_LABEL = String(import.meta.env.VITE_CHINA_GATE_DISMISS_LABEL || 'Stay here').trim() || 'Stay here';
+  const CHINA_GATE_STORAGE_KEY = 'gesture3d.china-gate.dismissed.v1';
+  const CHINA_GATE_TIMEOUT_MS = Math.min(8000, Math.max(1200, Number(import.meta.env.VITE_CHINA_GATE_TIMEOUT_MS || 3500) || 3500));
+  const isChinaRouteForced = chinaRouteOverride === '1' || chinaRouteOverride === 'true' || chinaRouteOverride === 'on';
+  const defaultMovieBase = import.meta.env.DEV ? '/movies' : DEFAULT_MOVIE_CDN_BASE;
+  let isChinaExperienceActive = isChinaRouteForced;
+  let activeMovieBase = isChinaExperienceActive ? CHINA_MOVIE_CDN_BASE : defaultMovieBase;
+  let chinaAccessModal = null;
+
+  function isChinaGateForced() {
+    return chinaGateOverride === '1' || chinaGateOverride === 'true' || chinaGateOverride === 'on';
+  }
+
+  function isChinaGateDisabledByQuery() {
+    return chinaGateOverride === '0' || chinaGateOverride === 'false' || chinaGateOverride === 'off';
+  }
+
+  function isChinaRouteQueryEnabled() {
+    return isChinaRouteForced;
+  }
+
+  function buildManagedMovieUrl(movieFileName = '') {
+    return `${activeMovieBase}/${String(movieFileName || '').replace(/^\/+/, '')}`;
+  }
+
+  function isManagedSyntheticDesiresMovie(movieFileName = '') {
+    return /synthetic_desires_[1-7]/i.test(String(movieFileName || '').trim());
+  }
+
+  function isLikelyChinaSession(source = {}) {
+    const countryCode = String(source?.countryCode || '').trim().toUpperCase();
+    const country = String(source?.country || '').trim().toLowerCase();
+    const timezone = String(source?.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone || '').trim();
+    const language = String(navigator.language || '').trim().toLowerCase();
+
+    if (countryCode === 'CN' || country === 'china') return true;
+    if (!source || source.status === 'error') {
+      return timezone === 'Asia/Shanghai' && (language === 'zh-cn' || language === 'zh-hans-cn');
+    }
+    return false;
+  }
+
+  function buildChinaTargetUrl(targetUrl = '') {
+    if (!targetUrl) return '';
+    const url = new URL(targetUrl, window.location.origin);
+    url.searchParams.set('chinaRoute', '1');
+    return url.toString();
+  }
+
+  function ensureChinaAccessModal() {
+    if (chinaAccessModal) return chinaAccessModal;
+
+    const overlay = document.createElement('div');
+    overlay.className = 'china-access-modal hidden';
+    overlay.setAttribute('aria-hidden', 'true');
+
+    const dialog = document.createElement('div');
+    dialog.className = 'china-access-dialog';
+    dialog.setAttribute('role', 'dialog');
+    dialog.setAttribute('aria-modal', 'true');
+    dialog.setAttribute('aria-label', CHINA_GATE_TITLE);
+
+    const badge = document.createElement('div');
+    badge.className = 'china-access-badge';
+    badge.textContent = 'Regional access';
+
+    const title = document.createElement('h2');
+    title.className = 'china-access-title';
+    title.textContent = CHINA_GATE_TITLE;
+
+    const body = document.createElement('p');
+    body.className = 'china-access-copy';
+    body.textContent = CHINA_GATE_MESSAGE;
+
+    const actions = document.createElement('div');
+    actions.className = 'china-access-actions';
+
+    const openButton = document.createElement('a');
+    openButton.className = 'china-access-btn china-access-btn-primary';
+    openButton.target = '_self';
+    openButton.rel = 'noopener';
+    openButton.textContent = CHINA_GATE_BUTTON_LABEL;
+
+    const dismissButton = document.createElement('button');
+    dismissButton.type = 'button';
+    dismissButton.className = 'china-access-btn china-access-btn-secondary';
+    dismissButton.textContent = CHINA_GATE_DISMISS_LABEL;
+
+    const closeModal = ({ persistDismissal = false } = {}) => {
+      if (persistDismissal) {
+        try {
+          window.localStorage.setItem(CHINA_GATE_STORAGE_KEY, String(Date.now()));
+        } catch (_error) {
+        }
+      }
+      overlay.classList.add('hidden');
+      overlay.classList.remove('open');
+      overlay.setAttribute('aria-hidden', 'true');
+      document.body.classList.remove('china-access-open');
+    };
+
+    dismissButton.addEventListener('click', () => closeModal({ persistDismissal: true }));
+    overlay.addEventListener('click', (event) => {
+      if (event.target === overlay) closeModal({ persistDismissal: true });
+    });
+    document.addEventListener('keydown', (event) => {
+      if (event.key === 'Escape' && chinaAccessModal && !chinaAccessModal.classList.contains('hidden')) {
+        closeModal({ persistDismissal: true });
+      }
+    });
+
+    actions.appendChild(openButton);
+    actions.appendChild(dismissButton);
+    dialog.appendChild(badge);
+    dialog.appendChild(title);
+    dialog.appendChild(body);
+    dialog.appendChild(actions);
+    overlay.appendChild(dialog);
+    document.body.appendChild(overlay);
+
+    overlay.openModal = ({ targetUrl = '' } = {}) => {
+      if (!targetUrl) return;
+      openButton.href = buildChinaTargetUrl(targetUrl);
+      overlay.classList.remove('hidden');
+      overlay.classList.add('open');
+      overlay.setAttribute('aria-hidden', 'false');
+      document.body.classList.add('china-access-open');
+    };
+
+    chinaAccessModal = overlay;
+    return chinaAccessModal;
+  }
+
+  function shouldSkipChinaAccessGate() {
+    if (isChinaGateDisabledByQuery()) return true;
+    if (String(window.location.hostname || '').trim().toLowerCase() !== CHINA_GATE_SOURCE_HOST) return true;
+    if (!CHINA_ALT_URL) return true;
+    if (window.location.hostname === new URL(CHINA_ALT_URL, window.location.origin).hostname) return true;
+    try {
+      return !isChinaGateForced() && Boolean(window.localStorage.getItem(CHINA_GATE_STORAGE_KEY));
+    } catch (_error) {
+      return false;
+    }
+  }
+
+  function handleChinaAccessGate(source = {}) {
+    if (shouldSkipChinaAccessGate()) return false;
+    if (!isChinaGateForced() && !isLikelyChinaSession(source)) return false;
+    if (CHINA_GATE_MODE === 'redirect') {
+      window.location.replace(buildChinaTargetUrl(CHINA_ALT_URL));
+      return true;
+    }
+    ensureChinaAccessModal().openModal({ targetUrl: CHINA_ALT_URL });
+    return true;
+  }
+
+  function applyChinaRegionalRuntime(source = {}) {
+    const shouldEnableChinaExperience = isChinaRouteQueryEnabled() || isChinaGateForced() || isLikelyChinaSession(source);
+    isChinaExperienceActive = shouldEnableChinaExperience;
+    document.body.classList.toggle('china-runtime', shouldEnableChinaExperience);
+
+    const nextMovieBase = shouldEnableChinaExperience ? CHINA_MOVIE_CDN_BASE : defaultMovieBase;
+
+    const movieBaseChanged = activeMovieBase !== nextMovieBase;
+    activeMovieBase = nextMovieBase;
+
+    if (voiceManager?.configureRegionalAccess) {
+      voiceManager.configureRegionalAccess({
+        isChina: shouldEnableChinaExperience,
+        disableLiveExperimental: shouldEnableChinaExperience,
+        disableWebResearch: shouldEnableChinaExperience
+      });
+    }
+
+    if (!movieBaseChanged) return;
+
+    playlistFiles = playlistFiles.map((entry = {}) => {
+      if (!isManagedSyntheticDesiresMovie(entry?.name)) return entry;
+      return {
+        ...entry,
+        path: buildManagedMovieUrl(entry.name)
+      };
+    });
+
+    renderPlaylist();
+
+    const activeFile = playlistFiles[currentPlaylistIndex];
+    if (activeFile && isManagedSyntheticDesiresMovie(activeFile.name)) {
+      playMovie(activeFile).catch((error) => {
+        console.warn('China runtime movie base swap failed:', error);
+      });
     }
   }
       let pendingPodcastStartReplyLines = [];
@@ -368,7 +712,6 @@ const startGestureApp = () => {
     pendingPodcastStartReplyLines = [];
     _pendingSplitMuseReplyResult = null;
     _pendingSplitMuseReplyAt = 0;
-    _podcastPrefetch = null;
     _splitMuseAbortController?.abort();
     _splitMuseAbortController = null;
     _lastSplitHostACloudAttemptAt = 0;
@@ -459,7 +802,7 @@ const startGestureApp = () => {
     });
   }
 
-  function schedulePublicPodcastAiContinue(delayMs = isMobile ? 900 : 500) {
+  function schedulePublicPodcastAiContinue(delayMs = isMobile ? 1400 : 900) {
     if (!publicPodcastAiEnabled || !publicPodcastAiAutoMode || publicPodcastAiMovieSwitchPending || publicPodcastAiStartInFlight || brainTrainingInFlight || !voiceManager || !podcastEngine) return;
     clearPublicPodcastAiContinueTimer();
     publicPodcastAiContinueTimer = setTimeout(async () => {
@@ -474,7 +817,7 @@ const startGestureApp = () => {
           delayMs,
           reason: voiceManager?.synthesis?.speaking ? 'speech-busy' : podcastEngine?.viewerInterruptActive ? 'viewer-interrupt' : podcastEngine?.pendingViewerInterrupt ? 'viewer-interrupt-pending' : voiceManager?.micStarting ? 'mic-starting' : 'conversation-busy'
         });
-        schedulePublicPodcastAiContinue(isMobile ? 1200 : 700);
+        schedulePublicPodcastAiContinue(isMobile ? 1700 : 1200);
         updatePublicPodcastAiButtonState();
         return;
       }
@@ -502,13 +845,7 @@ const startGestureApp = () => {
         setInlineActivity('podcast-thinking');
         showBubbleThinking();
         try {
-          if (_podcastPrefetch && _podcastPrefetch.turn === nextTurn && _podcastPrefetch.movie === currentMovie) {
-            nextLines = await _podcastPrefetch.promise;
-            _podcastPrefetch = null;
-          } else {
-            _podcastPrefetch = null;
-            nextLines = await buildPublicPodcastAiExchangeLines(nextTurn);
-          }
+          nextLines = await buildPublicPodcastAiExchangeLines(nextTurn);
         } catch (_err) {
           // cloud failed · fall through to template
         }
@@ -528,7 +865,7 @@ const startGestureApp = () => {
         });
         // Rewind the turn counter because this turn never actually entered the queue.
         publicPodcastAiTurnNumber = Math.max(0, nextTurn - 1);
-        schedulePublicPodcastAiContinue(isMobile ? 1200 : 700);
+        schedulePublicPodcastAiContinue(isMobile ? 1700 : 1200);
         updatePublicPodcastAiButtonState();
         return;
       }
@@ -547,13 +884,6 @@ const startGestureApp = () => {
         reason: 'idle-resume'
       });
       injectPodcastNarration(nextLines, { cancelActive: false, prioritize: true, force: true });
-      // Prefetch the next exchange now, while this turn is being spoken — removes the
-      // cloud-generation gap (~4s) from the silence between turns.
-      _podcastPrefetch = {
-        movie: currentMovie,
-        turn: nextTurn + 1,
-        promise: buildPublicPodcastAiExchangeLines(nextTurn + 1).catch(() => [])
-      };
       updatePublicPodcastAiButtonState();
       if (!voiceManager?.synthesis?.speaking) {
         setTimeout(() => drainPodcastNarrationQueue(true), 30);
@@ -587,16 +917,9 @@ const startGestureApp = () => {
     }
   }
 
-  const DEFAULT_MOVIE_AUDIO_VOLUME = 0.7;
+  const DEFAULT_MOVIE_AUDIO_VOLUME = 0.16;
 
   // ─── BACKGROUND AUDIO (Synthetic_Desires_1 audio plays under videos 2/3/4) ───
-  const MOVIE_CDN_BASE = String(
-    import.meta.env.VITE_MOVIE_CDN_BASE || 'https://pub-3a3ec970180e4d9db03559eb82c9b828.r2.dev'
-  ).replace(/\/+$/, '');
-  const R2_BASE = import.meta.env.DEV
-    ? '/movies'
-    : MOVIE_CDN_BASE;
-
   const bgAudio = document.createElement('audio');
   bgAudio.loop = true;
   bgAudio.preload = 'none';
@@ -642,6 +965,8 @@ const startGestureApp = () => {
   // ─── STATE ───
   let handTracker;
   let scene3d;
+  let printModule;
+  let printPlaybackSnapshot = null;
   let webcamOverlay;
   let voiceManager;
   let podcastEngine;
@@ -650,11 +975,7 @@ const startGestureApp = () => {
   let suggestionEngine;
   let showShapes = true; // Default to showing shapes per user request "activate gesture shapes" option
   let aiSpeakTimer = null;
-  let lastBubbleQuestionText = '';
-  let lastBubbleQuestionAt = 0;
   let _activeSpeechFullText = '';
-  let _activeSpeechPrefix = '';
-  let _activeSpeechLiveReveal = true;
   let fpsFrames = 0;
   let fpsTime = 0;
   let currentFps = 60;
@@ -740,75 +1061,6 @@ const startGestureApp = () => {
   let aiModePillFlashTimer = null;
   let podcastVoiceProfiles = { hostA: null, hostB: null };
   let selectedConversationSurfaceMode = 'chat';
-  let storyVoiceOverEnabled = false;
-  let storyVoiceOverInFlight = false;
-  let storyVoiceOverLastMovie = '';
-  let storyVoiceOverQueuedMovie = '';
-  let lastVoiceOverStoryboard = null;
-  const DEFORUM_LIVE_CONFIG_STORAGE_KEY = 'gesture3d.deforum-live-config.v1';
-  const defaultDeforumLiveConfig = {
-    totalFrames: 40,
-    steps: 10,
-    strength: 0.78,
-    diffusionCadence: 1,
-    height: 512,
-    clipSkip: 2
-  };
-  const readDeforumLiveConfig = () => {
-    try {
-      return {
-        ...defaultDeforumLiveConfig,
-        ...JSON.parse(localStorage.getItem(DEFORUM_LIVE_CONFIG_STORAGE_KEY) || '{}')
-      };
-    } catch {
-      return { ...defaultDeforumLiveConfig };
-    }
-  };
-  const saveDeforumLiveConfig = (config) => {
-    const next = { ...defaultDeforumLiveConfig, ...config };
-    localStorage.setItem(DEFORUM_LIVE_CONFIG_STORAGE_KEY, JSON.stringify(next));
-    return next;
-  };
-  const applyDeforumLiveConfigToStoryboard = (storyboard) => {
-    const config = readDeforumLiveConfig();
-    const next = JSON.parse(JSON.stringify(storyboard || {}));
-    const storyboardFrames = Number(next?.render?.totalFrames || 0);
-    const totalFrames = Math.max(1, storyboardFrames || Number(config.totalFrames) || defaultDeforumLiveConfig.totalFrames);
-    next.render = {
-      ...(next.render || {}),
-      totalFrames,
-      totalDurationSec: Number((totalFrames / 15).toFixed(2)),
-      fps: 15,
-      deforum: {
-        steps: Math.max(6, Math.min(40, Number(config.steps) || defaultDeforumLiveConfig.steps)),
-        strength: Math.max(0.1, Math.min(0.9, Number(config.strength) || defaultDeforumLiveConfig.strength)),
-        diffusionCadence: Math.max(1, Math.min(8, Number(config.diffusionCadence) || defaultDeforumLiveConfig.diffusionCadence)),
-        height: Math.max(256, Math.min(768, Number(config.height) || defaultDeforumLiveConfig.height)),
-        clipSkip: Math.max(1, Math.min(4, Number(config.clipSkip) || defaultDeforumLiveConfig.clipSkip))
-      }
-    };
-
-    if (Array.isArray(next.segments) && next.segments.length) {
-      const originalEnd = Math.max(
-        Number(storyboard?.render?.totalFrames) || 0,
-        ...next.segments.map((segment) => Number(segment.endFrame || segment.keyframe || 0))
-      ) || totalFrames;
-      next.segments = next.segments.map((segment) => {
-        const scaleFrame = (frame) => Math.max(0, Math.min(totalFrames - 1, Math.round((Number(frame) || 0) / originalEnd * (totalFrames - 1))));
-        const startFrame = scaleFrame(segment.startFrame ?? segment.keyframe ?? 0);
-        const endFrame = Math.max(startFrame + 1, Math.min(totalFrames, scaleFrame(segment.endFrame ?? segment.keyframe ?? startFrame) + 1));
-        return {
-          ...segment,
-          keyframe: scaleFrame(segment.keyframe ?? segment.startFrame ?? 0),
-          startFrame,
-          endFrame,
-          startSec: Number((startFrame / 15).toFixed(2)),
-          endSec: Number((endFrame / 15).toFixed(2))
-        };
-      });
-    }
-    return next;
-  };
   let publicPodcastAiAutoMode = false;
   let publicPodcastAiTurnNumber = 0;
   let publicPodcastAiStartInFlight = false;
@@ -883,8 +1135,6 @@ const startGestureApp = () => {
   // Buffer: Split mode Muse local answer that arrived after DICT fast-lane was already served
   let _pendingSplitMuseReplyResult = null;
   let _pendingSplitMuseReplyAt = 0;
-  // Prefetched next podcast exchange · built while the current turn is still speaking
-  let _podcastPrefetch = null;
   // Cloud throttle for split-mode Host A questions · don't hammer Gemini quota on every turn.
   // At most one cloud attempt per SPLIT_HOST_A_CLOUD_MIN_INTERVAL_MS.
   const SPLIT_HOST_A_CLOUD_MIN_INTERVAL_MS = 15_000;
@@ -904,11 +1154,11 @@ const startGestureApp = () => {
   let isVideoMode = false;
   let isSeeking = false;
   let playlistFiles = [
-    { name: 'Synthetic_Desires_1.mp4', path: `${R2_BASE}/Synthetic_Desires_1.mp4` },
-    { name: 'Synthetic_Desires_2.mp4', path: `${R2_BASE}/Synthetic_Desires_2.mp4` },
-    { name: 'Synthetic_Desires_3.mp4', path: `${R2_BASE}/Synthetic_Desires_3.mp4` },
-    { name: 'Synthetic_Desires_4.mp4', path: `${R2_BASE}/Synthetic_Desires_4.mp4` },
-    { name: 'Synthetic_Desires_5.mp4', path: `${R2_BASE}/Synthetic_Desires_5.mp4` },
+    { name: 'Synthetic_Desires_1.mp4', path: buildManagedMovieUrl('Synthetic_Desires_1.mp4') },
+    { name: 'Synthetic_Desires_2.mp4', path: buildManagedMovieUrl('Synthetic_Desires_2.mp4') },
+    { name: 'Synthetic_Desires_3.mp4', path: buildManagedMovieUrl('Synthetic_Desires_3.mp4') },
+    { name: 'Synthetic_Desires_4.mp4', path: buildManagedMovieUrl('Synthetic_Desires_4.mp4') },
+    { name: 'Synthetic_Desires_5.mp4', path: buildManagedMovieUrl('Synthetic_Desires_5.mp4') },
   ];
   let currentPlaylistIndex = 0;
   let isPlaylistOpen = true; // User requested: "on load it will show the playlist"
@@ -1100,6 +1350,30 @@ const startGestureApp = () => {
     });
   }
 
+  function pauseForPrint() {
+    const video = scene3d?.getVideoMesh?.()?.videoElement || null;
+    printPlaybackSnapshot = {
+      video,
+      videoPlaying: Boolean(video && !video.paused),
+      backgroundPlaying: Boolean(bgAudioActive && !bgAudio.paused),
+      speechPlaying: Boolean(window.speechSynthesis?.speaking && !window.speechSynthesis?.paused)
+    };
+    video?.pause();
+    if (bgAudioActive) bgAudio.pause();
+    if (printPlaybackSnapshot.speechPlaying) window.speechSynthesis.pause();
+  }
+
+  function resumeAfterPrint() {
+    const snapshot = printPlaybackSnapshot;
+    printPlaybackSnapshot = null;
+    if (!snapshot) return;
+    if (snapshot.videoPlaying && snapshot.video === scene3d?.getVideoMesh?.()?.videoElement) {
+      snapshot.video.play().catch(() => {});
+    }
+    if (snapshot.backgroundPlaying && bgAudioActive) bgAudio.play().catch(() => queueBgAudioResume());
+    if (snapshot.speechPlaying) window.speechSynthesis?.resume();
+  }
+
   function triggerAiReplyGlitch() {
     if (!aiSpeechBubble) return;
     aiSpeechBubble.classList.remove('ai-reply-glitch');
@@ -1119,6 +1393,27 @@ const startGestureApp = () => {
       updateLoading('Initializing...', 20);
 
       scene3d = new Scene3D(threeCanvas);
+      printModule = new PrintModule({
+        unlockElement: appLogo,
+        mountElement: appLogo,
+        getContext: () => ({
+          movieName: voiceManager?.currentMovie || playlistFiles[currentPlaylistIndex]?.name || '',
+          video: scene3d?.getVideoMesh?.()?.videoElement || null,
+          spokenText: _activeSpeechFullText || aiText?.textContent || '',
+          notify: (message) => showAiSpeech(message, true),
+          selectArtwork: async (artworkId) => {
+            const index = playlistFiles.findIndex((entry) => {
+              const match = String(entry?.name || '').match(/synthetic[_\s-]*desires[_\s-]*(\d)/i);
+              return match && `SD${match[1]}` === artworkId;
+            });
+            if (index < 0) throw new Error('The selected artwork is not in the playlist.');
+            currentPlaylistIndex = index;
+            await playMovie(playlistFiles[index]);
+          },
+          pause: pauseForPrint,
+          resume: resumeAfterPrint
+        })
+      });
 
       // ── Skip webcam on startup · don't prompt for camera permission ──
       // Camera will start when user clicks the webcam toggle button.
@@ -1154,7 +1449,13 @@ const startGestureApp = () => {
       });
 
       // Initialize Voice Manager
-      voiceManager = new VoiceManager();
+      voiceManager = new VoiceManager({
+        regionalAccess: {
+          isChina: isChinaExperienceActive,
+          disableLiveExperimental: isChinaExperienceActive,
+          disableWebResearch: isChinaExperienceActive
+        }
+      });
 
       // Initialize Suggestion Engine
       suggestionEngine = new SuggestionEngine({
@@ -1224,56 +1525,83 @@ const startGestureApp = () => {
         }
       });
       
-      // Start Chat button triggers everything:
-      // 1. Play movie 1 with sound for 10 seconds
-      // 2. Then start Play All 3 min mode + podcast AI
-      const startChatBtn = document.getElementById('start-chat-btn');
+      // Convert the initial guide into a compact Help tab after Free Chat starts.
       const centerGuideOverlay = document.getElementById('center-guide-overlay');
-      if (startChatBtn) {
-        startChatBtn.addEventListener('click', () => {
-          try {
-            setChatEnabled(true, 'Chat active');
-            if (centerGuideOverlay) centerGuideOverlay.style.display = 'none';
-
-            // 1. Start movie 1 now (user gesture → audio allowed)
-            if (playlistFiles.length > 0) {
-              playMovie(playlistFiles[0], { primeAudioDuringGesture: true })
-                .then(() => {
-                  if (bgAudio) {
-                    bgAudio.muted = false;
-                    bgAudio.volume = 1.0;
-                    if (bgAudio.paused && bgAudio.src) {
-                      bgAudio.play().catch(() => {});
-                    }
-                  }
-                })
-                .catch((err) => console.warn('Movie start failed:', err));
-            }
-
-            // 2. After 10 seconds: Play All 4.5 min mode + podcast AI
-            setTimeout(() => {
-              window.startMovieContentRotation?.(['test'], {
-                intervalSeconds: 180,
-                mode: 'play-all-3min',
-                movies: ['Synthetic_Desires_1.mp4', 'Synthetic_Desires_3.mp4', 'Synthetic_Desires_4.mp4']
-              });
-              setTimeout(() => {
-                if (publicPodcastAiEnabled && !publicPodcastAiAutoMode) {
-                  startPublicPodcastAiConversation();
-                }
-              }, 1500);
-            }, 10000);
-
-            if (suggestionEngine) suggestionEngine.render();
-          } catch (err) {
-            console.warn('Start Chat handler error:', err);
+      const guideHelpBtn = document.getElementById('guide-help-btn');
+      const guideCloseBtn = document.getElementById('guide-close-btn');
+      const guideStepCounter = document.getElementById('guide-step-counter');
+      const guidePrevBtn = document.getElementById('guide-prev-btn');
+      const guideNextBtn = document.getElementById('guide-next-btn');
+      let activeGuideStep = 1;
+      let guideHelpTabActive = false;
+      const setGuideStep = (step) => {
+        activeGuideStep = Math.max(1, Math.min(3, step));
+        if (centerGuideOverlay) {
+          centerGuideOverlay.querySelectorAll('[data-guide-step]').forEach((element) => {
+            element.classList.toggle('active', Number(element.dataset.guideStep) === activeGuideStep);
+          });
+          centerGuideOverlay.querySelectorAll('.guide-callout-path').forEach((path) => {
+            const isActive = Number(path.dataset.guideStep) === activeGuideStep;
+            path.toggleAttribute('marker-end', isActive);
+            if (isActive) path.setAttribute('marker-end', 'url(#guide-arrowhead)');
+          });
+        }
+        if (guideStepCounter) guideStepCounter.textContent = `${activeGuideStep} of 3`;
+        if (guidePrevBtn) guidePrevBtn.disabled = activeGuideStep === 1;
+        if (guideNextBtn) {
+          const isFinalStep = activeGuideStep === 3;
+          guideNextBtn.disabled = false;
+          guideNextBtn.textContent = isFinalStep ? 'Podcast' : 'Next';
+        }
+      };
+      const dismissGuideToFreeChat = () => {
+        setChatEnabled(true, 'Chat active');
+        guideHelpTabActive = true;
+        if (centerGuideOverlay) {
+          centerGuideOverlay.classList.add('guide-help-tab');
+          centerGuideOverlay.classList.remove('guide-help-expanded');
+        }
+        if (guideHelpBtn) guideHelpBtn.classList.remove('hidden');
+        if (aiChatInput && typeof aiChatInput.focus === 'function') aiChatInput.focus();
+        if (suggestionEngine) suggestionEngine.render();
+      };
+      const toggleGuideHelp = () => {
+        if (!guideHelpTabActive || !centerGuideOverlay || !guideHelpBtn) return;
+        const expanded = centerGuideOverlay.classList.toggle('guide-help-expanded');
+        guideHelpBtn.setAttribute('aria-expanded', expanded ? 'true' : 'false');
+        guideHelpBtn.title = expanded ? 'Hide guide' : 'Show guide';
+      };
+      if (guideHelpBtn) {
+        guideHelpBtn.addEventListener('click', toggleGuideHelp);
+      }
+      if (guidePrevBtn) guidePrevBtn.addEventListener('click', () => setGuideStep(activeGuideStep - 1));
+      if (guideNextBtn) {
+        guideNextBtn.addEventListener('click', async () => {
+          if (activeGuideStep < 3) {
+            setGuideStep(activeGuideStep + 1);
+            return;
           }
+          guideNextBtn.disabled = true;
+          guideHelpTabActive = true;
+          if (centerGuideOverlay) {
+            centerGuideOverlay.classList.add('guide-help-tab');
+            centerGuideOverlay.classList.remove('guide-help-expanded');
+          }
+          if (guideHelpBtn) guideHelpBtn.classList.remove('hidden');
+          await announceGuidePodcastStart();
+          const started = await switchConversationSurfaceMode('podcast', { source: 'guide-step', announce: false });
+          guideNextBtn.disabled = false;
         });
       }
+      if (guideCloseBtn) guideCloseBtn.addEventListener('click', dismissGuideToFreeChat);
+      setGuideStep(1);
 
-      // Show center guide on load so the user can start the show
+      // Show or hide center guide based on initial chat state
       try {
-        if (centerGuideOverlay) centerGuideOverlay.style.display = 'flex';
+        if (centerGuideOverlay) {
+          if (aiChatInput && !aiChatInput.disabled) centerGuideOverlay.style.display = 'none';
+          else centerGuideOverlay.style.display = 'flex';
+        }
       } catch (e) { /* ignore */ }
 
       // Initialize modular engines after voiceManager is ready
@@ -1284,13 +1612,16 @@ const startGestureApp = () => {
         isMobile,
         pickVoiceProfiles: () => podcastVoiceProfiles,
         onChatLine: (next) => {
+          const dialogueText = String(next?.text || '').trim();
+          if (dialogueText) {
+            showAiSpeech(dialogueText, true);
+          }
           appendPodcastNarrationChatLine(next);
-          showPodcastBubbleLine(next);
         },
         onIdle: () => {
           if (publicPodcastAiAutoMode && !publicPodcastAiMovieSwitchPending && !publicPodcastAiStartInFlight && !brainTrainingInFlight && !podcastGuestFloorActive && !voiceManager?.isListening && !voiceManager?.micStarting) {
             logPodcastControlEvent('idle', { reason: 'schedule-continue' });
-            schedulePublicPodcastAiContinue(isMobile ? 900 : 450);
+            schedulePublicPodcastAiContinue(isMobile ? 1800 : 1100);
           } else {
             logPodcastControlEvent('idle-hold', {
               reason: publicPodcastAiMovieSwitchPending
@@ -1738,8 +2069,6 @@ const startGestureApp = () => {
           return;
         }
 
-        lastBubbleQuestionText = text;
-        lastBubbleQuestionAt = Date.now();
         showAiSpeech(`"${text}"`, false);
         if (isVideoMode) {
           appendChatMessage('user', text);
@@ -1777,8 +2106,6 @@ const startGestureApp = () => {
           return;
         }
 
-        lastBubbleQuestionText = text;
-        lastBubbleQuestionAt = Date.now();
         showAiSpeech(`"${text}"`, false);
         if (isVideoMode) {
           appendChatMessage('user', text);
@@ -1821,19 +2148,12 @@ const startGestureApp = () => {
           btnVoiceMic.classList.add('listening');
           if (label) label.textContent = 'AI Speaking...';
         }
-        setAiSpeechStateChip(isPodcastSpeech ? 'Stage live' : 'AI reply', true);
-        // Switch bubble from thinking ? live word-reveal
+        const speakerLabel = isPodcastSpeech
+          ? (options?.speaker === 'hostB' ? getPodcastMuseName() : 'Host A')
+          : 'AI reply';
+        setAiSpeechStateChip(speakerLabel, true);
+        // Keep the complete reply visible if speech-boundary callbacks are unavailable.
         _activeSpeechFullText = String(aiText?.textContent || '').trim();
-        _activeSpeechPrefix = '';
-        _activeSpeechLiveReveal = !isPodcastSpeech;
-        const answerMarker = '\nA: ';
-        const answerMarkerIndex = _activeSpeechFullText.indexOf(answerMarker);
-        if (answerMarkerIndex >= 0) {
-          _activeSpeechPrefix = _activeSpeechFullText.slice(0, answerMarkerIndex + answerMarker.length);
-        }
-        if (_activeSpeechFullText && _activeSpeechLiveReveal) {
-          safeSetText(aiText, _activeSpeechPrefix);
-        }
         aiSpeechBubble?.classList.remove('thinking');
         aiSpeechBubble?.classList.add('speaking');
         if (aiWave) aiWave.style.display = 'flex';
@@ -1885,8 +2205,7 @@ const startGestureApp = () => {
 
       voiceManager.onSpeakWord = (fullText, charIndex, charLength) => {
         if (!aiText) return;
-        if (!_activeSpeechLiveReveal) return;
-        safeSetText(aiText, `${_activeSpeechPrefix}${fullText.slice(0, charIndex + (charLength || 1))}`);
+        safeSetText(aiText, fullText.slice(0, charIndex + (charLength || 1)));
       };
 
       voiceManager.onSpeakEnd = (speechOptions = {}, speakMeta = {}) => {
@@ -1909,8 +2228,6 @@ const startGestureApp = () => {
           safeSetText(aiText, _activeSpeechFullText);
         }
         _activeSpeechFullText = '';
-        _activeSpeechPrefix = '';
-        _activeSpeechLiveReveal = true;
         aiSpeechBubble?.classList.remove('speaking', 'thinking');
         // Stop breathing visualizer
         visualizer.stop();
@@ -1932,14 +2249,9 @@ const startGestureApp = () => {
         }, 3000);
 
         if (isPodcastSpeech && speechOptions?.speaker === 'hostA' && pendingPodcastStartReplyLines.length) {
-          // If another Host A question is still queued (e.g. movie-switch handoff spoke first),
-          // keep the deferred Muse answer pending so it plays after its own question, not before.
-          const queueHasPendingHostQuestion = (podcastEngine?.queue || []).some((entry) => entry?.speaker === 'hostA');
-          if (!queueHasPendingHostQuestion) {
-            const deferredStartReplyLines = pendingPodcastStartReplyLines.slice();
-            pendingPodcastStartReplyLines = [];
-            injectPodcastNarration(deferredStartReplyLines, { cancelActive: false, prioritize: true, force: true });
-          }
+          const deferredStartReplyLines = pendingPodcastStartReplyLines.slice();
+          pendingPodcastStartReplyLines = [];
+          injectPodcastNarration(deferredStartReplyLines, { cancelActive: false, prioritize: true, force: true });
         }
 
         if (!isPodcastSpeech && podcastGuestPendingResumeDelayMs > 0) {
@@ -1956,7 +2268,7 @@ const startGestureApp = () => {
         if (shouldContinuePodcastNarration) {
           // Natural pause between hosts · gives the impression of a real conversation breath.
           // Longer on mobile to let Android TTS engine settle between utterances.
-          const drainDelay = isMobile ? 900 : 400;
+          const drainDelay = isMobile ? 1200 : 600;
           setTimeout(() => drainPodcastNarrationQueue(true), drainDelay);
         }
         updatePublicPodcastAiButtonState();
@@ -2016,7 +2328,16 @@ const startGestureApp = () => {
 
         startRenderLoop();
 
-        // Movie playback starts via the Start Chat button (user gesture)
+        // Play first movie after loop starts
+        if (playlistFiles.length > 0) {
+          playMovie(playlistFiles[0], { primeAudioDuringGesture: true })
+            .then(() => {
+              console.log('Autoplay started.');
+            })
+            .catch((err) => {
+              console.warn('Autoplay failed:', err);
+            });
+        }
       };
 
       requestAnimationFrame(() => startApp());
@@ -3526,962 +3847,6 @@ const startGestureApp = () => {
     return movieForgeModal;
   }
 
-  let deforumPreviewPanel = null;
-
-  function ensureDeforumPreviewPanel() {
-    if (deforumPreviewPanel) return deforumPreviewPanel;
-
-    const panel = document.createElement('div');
-    panel.className = 'deforum-preview-panel hidden';
-
-    const header = document.createElement('div');
-    header.className = 'deforum-preview-header';
-    header.innerHTML = `
-      <div class="deforum-preview-title">
-        <span class="deforum-record-status" style="font-size: 0.7rem; color: #ff5555; margin-right: 10px; display: none;">REC ●</span>
-        Deforum Generation
-      </div>
-      <button class="deforum-preview-close">&times;</button>
-    `;
-
-    const videoWrap = document.createElement('div');
-    videoWrap.className = 'deforum-preview-video-wrap';
-    
-    const video = document.createElement('video');
-    video.className = 'deforum-preview-video';
-    video.autoplay = true;
-    video.loop = true;
-    video.muted = true;
-    video.playsInline = true;
-    videoWrap.appendChild(video);
-
-    const liveImg = document.createElement('img');
-    liveImg.className = 'deforum-live-image hidden';
-    liveImg.style.cssText = `
-      position: absolute;
-      inset: 0;
-      width: 100%;
-      height: 100%;
-      object-fit: contain;
-      background: #000;
-      z-index: 5;
-      opacity: 0;
-      transition: opacity 0.35s ease-in-out;
-    `;
-    // Second layer used to cross-fade/morph between consecutive SD frames so
-    // the scene animates smoothly instead of hard-cutting or freezing.
-    const liveImgB = document.createElement('img');
-    liveImgB.className = 'deforum-live-image-b hidden';
-    liveImgB.style.cssText = `
-      position: absolute;
-      inset: 0;
-      width: 100%;
-      height: 100%;
-      object-fit: contain;
-      background: #000;
-      z-index: 6;
-      opacity: 0;
-      transition: opacity 0.35s ease-in-out;
-    `;
-    videoWrap.appendChild(liveImg);
-    videoWrap.appendChild(liveImgB);
-
-    // Recording canvas (hidden) to composite the animation for MediaRecorder
-    const captureCanvas = document.createElement('canvas');
-    captureCanvas.style.display = 'none';
-    videoWrap.appendChild(captureCanvas);
-
-    // Video player for the final recorded movie popup
-    const resultPlayer = document.createElement('video');
-    resultPlayer.className = 'deforum-result-player';
-    resultPlayer.style.cssText = `
-      position: absolute;
-      inset: 0;
-      width: 100%;
-      height: 100%;
-      object-fit: contain;
-      background: #000;
-      z-index: 20;
-      display: none;
-    `;
-    resultPlayer.controls = true;
-    resultPlayer.autoplay = true;
-    resultPlayer.loop = true;
-    videoWrap.appendChild(resultPlayer);
-
-    const promptOverlay = document.createElement('div');
-    promptOverlay.className = 'deforum-prompt-overlay';
-    promptOverlay.style.cssText = `
-      position: absolute;
-      bottom: 0;
-      left: 0;
-      right: 0;
-      padding: 10px;
-      background: linear-gradient(transparent, rgba(0,0,0,0.8));
-      color: #fff;
-      font-size: 0.65rem;
-      font-family: monospace;
-      line-height: 1.2;
-      pointer-events: none;
-    `;
-    videoWrap.appendChild(promptOverlay);
-
-    const status = document.createElement('div');
-    status.className = 'deforum-preview-status';
-    status.innerHTML = `
-      <div class="deforum-preview-dot"></div>
-      <span class="deforum-preview-text">Analyzing scene...</span>
-    `;
-
-    panel.appendChild(header);
-    panel.appendChild(videoWrap);
-    panel.appendChild(status);
-    document.body.appendChild(panel);
-
-    const hidePanel = () => {
-      panel.classList.add('hidden');
-      panel.classList.remove('visible');
-      clearInterval(panel.crossfadeTimer);
-      clearInterval(panel.crossfadePlaybackTimer);
-      clearInterval(panel.storyboardFrameTimer);
-      video.pause();
-      video.src = '';
-      if (isAnimationRunning) {
-        clearTimeout(stopTimer);
-        stopAnimationAndNotify();
-      }
-    };
-
-    header.querySelector('.deforum-preview-close').addEventListener('click', hidePanel);
-
-    const DURATION_MS = 4 * 60 * 1000;
-    let isAnimationRunning = false;
-    let stopTimer = null;
-    let animationStartTime = 0;
-    let animationStartedAt = 0;
-    let deforumPreviewTimer = null;
-
-    const startNativeDeforumRender = async (storyboard, source) => {
-      panel.querySelector('.deforum-preview-dot').style.background = '#ff8c00';
-      panel.querySelector('.deforum-preview-text').textContent = 'Queueing native Deforum…';
-      try {
-        const configuredStoryboard = applyDeforumLiveConfigToStoryboard(storyboard);
-        const response = await fetch('/api/dev/render-deforum', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ storyboard: configuredStoryboard, source })
-        });
-        const data = await response.json();
-        if (!response.ok) throw new Error(data.error || 'Deforum did not accept the render.');
-
-        const jobId = Array.isArray(data.job_ids) ? data.job_ids[0] : 'queued job';
-        panel.querySelector('.deforum-preview-text').textContent = 'Native Deforum rendering…';
-        appendChatMessage('assistant', `Native Deforum render queued: <code>${jobId}</code>. Forge now owns the keyframes, warping, frame sequence, and MP4 creation.`);
-
-        clearInterval(deforumPreviewTimer);
-        deforumPreviewTimer = setInterval(async () => {
-          try {
-            const previewResponse = await fetch(`/api/dev/deforum-preview?jobId=${encodeURIComponent(jobId)}`);
-            const preview = await previewResponse.json();
-            if (preview.frame && liveImg.src !== preview.frame) {
-              liveImg.src = preview.frame;
-              liveImg.classList.remove('hidden');
-              liveImg.style.opacity = '1';
-              liveImgB.style.opacity = '0';
-            }
-            if (preview.movie) {
-              resultPlayer.src = preview.movie;
-              resultPlayer.style.display = 'block';
-              liveImg.style.opacity = '0';
-              liveImgB.style.opacity = '0';
-            }
-            panel.querySelector('.deforum-preview-text').textContent = preview.phase === 'DONE'
-              ? (preview.movie ? 'Native Deforum movie ready' : 'Native Deforum finishing movie…')
-              : `Native Deforum ${String(preview.phase || 'rendering').toLowerCase()}…`;
-            if ((preview.phase === 'DONE' && preview.movie) || preview.status === 'FAILED' || preview.status === 'CANCELLED') {
-              clearInterval(deforumPreviewTimer);
-              deforumPreviewTimer = null;
-            }
-          } catch {
-            // Keep the last generated preview visible during a transient local request failure.
-          }
-        }, 5000);
-      } catch (error) {
-        panel.querySelector('.deforum-preview-dot').style.background = '#d95b5b';
-        panel.querySelector('.deforum-preview-text').textContent = 'Voice content frames playing - Deforum unavailable';
-        appendChatMessage('assistant', `Native Deforum could not start: ${error.message}`);
-      }
-    };
-
-    const stopAnimationAndNotify = () => {
-      isAnimationRunning = false;
-      if (deforumPreviewPanel) {
-        deforumPreviewPanel.querySelector('.deforum-record-status').style.display = 'none';
-        deforumPreviewPanel.querySelector('.deforum-preview-text').textContent = 'Stitching movie…';
-      }
-      appendChatMessage('assistant', 'Time is up — stitching the saved frames into a movie file…');
-
-      fetch('/api/dev/stitch-movie', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ fps: 15, startedAt: animationStartedAt })
-      })
-        .then((r) => r.json().then((data) => ({ ok: r.ok, data })))
-        .then(({ ok, data }) => {
-          if (deforumPreviewPanel) {
-            deforumPreviewPanel.querySelector('.deforum-preview-text').textContent = ok
-              ? 'Movie saved!'
-              : 'Stitching failed.';
-          }
-          if (ok) {
-            appendChatMessage('assistant', `Movie ready: <code>${data.file}</code> (${data.frameCount} frames).`);
-          } else {
-            appendChatMessage('assistant', `Could not stitch movie: ${data.error}`);
-          }
-        })
-        .catch((e) => {
-          appendChatMessage('assistant', `Could not stitch movie: ${e.message}`);
-        });
-    };
-
-    let isStitching = false;
-    let stitchRenderSize = 512;
-
-    panel.showStoryboardFrames = (storyboard, label = 'Voice content frames') => {
-      const segments = Array.isArray(storyboard?.segments) ? storyboard.segments.filter(Boolean) : [];
-      if (!segments.length) return;
-      clearInterval(panel.storyboardFrameTimer);
-      video.pause();
-      video.style.display = 'none';
-      resultPlayer.style.display = 'none';
-      liveImg.classList.remove('hidden');
-      liveImgB.classList.remove('hidden');
-      liveImg.style.zIndex = '30';
-      liveImgB.style.zIndex = '31';
-      liveImg.style.opacity = '1';
-      liveImgB.style.opacity = '0';
-      promptOverlay.style.display = 'none';
-
-      const hashText = (value = '') => String(value || '').split('').reduce((hash, char) => ((hash * 31) + char.charCodeAt(0)) >>> 0, 2166136261);
-      const color = (seed, offset = 0) => `hsl(${(seed + offset) % 360}, 58%, ${34 + ((seed >> 8) % 24)}%)`;
-      const fallbackFrame = (segment, index = 0) => {
-        const seed = hashText(`${segment?.beat || ''}${segment?.prompt || ''}${index}`);
-        const hueA = seed % 360;
-        const hueB = (seed + 78) % 360;
-        const beat = String(segment?.beat || 'Movie 1 voice content').replace(/[<>&]/g, ' ').slice(0, 120);
-        const svg = `
-          <svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
-            <defs>
-              <radialGradient id="g" cx="50%" cy="35%" r="75%">
-                <stop offset="0%" stop-color="hsl(${hueB},80%,64%)" stop-opacity="0.9"/>
-                <stop offset="48%" stop-color="hsl(${hueA},56%,34%)" stop-opacity="0.95"/>
-                <stop offset="100%" stop-color="#030506"/>
-              </radialGradient>
-              <filter id="blur"><feGaussianBlur stdDeviation="12"/></filter>
-            </defs>
-            <rect width="512" height="512" fill="url(#g)"/>
-            <circle cx="${120 + (seed % 260)}" cy="${90 + ((seed >> 5) % 260)}" r="150" fill="hsl(${(hueA + 120) % 360},90%,62%)" opacity="0.22" filter="url(#blur)"/>
-            <ellipse cx="256" cy="210" rx="58" ry="82" fill="rgba(230,238,234,0.78)"/>
-            <ellipse cx="256" cy="360" rx="118" ry="168" fill="rgba(8,12,16,0.82)"/>
-            <path d="M0 126 C130 80 270 180 512 118 M0 206 C140 154 320 255 512 190 M0 305 C120 260 330 360 512 292" stroke="rgba(255,255,255,0.20)" stroke-width="3" fill="none"/>
-            <rect x="28" y="404" width="456" height="70" rx="12" fill="rgba(0,0,0,0.42)"/>
-            <text x="44" y="432" fill="rgba(235,245,242,0.92)" font-family="Georgia,serif" font-size="18">Movie 1 voice content frame ${index + 1}</text>
-            <text x="44" y="458" fill="rgba(210,230,224,0.72)" font-family="Arial,sans-serif" font-size="12">${beat}</text>
-          </svg>`;
-        return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
-      };
-      const drawFrame = (segment, index = 0) => {
-        const canvas = document.createElement('canvas');
-        canvas.width = 512;
-        canvas.height = 512;
-        const ctx = canvas.getContext('2d');
-        if (!ctx) return fallbackFrame(segment, index);
-        const seed = hashText(`${segment?.beat || ''}${segment?.prompt || ''}${index}`);
-        const bg = ctx.createLinearGradient(0, 0, 512, 512);
-        bg.addColorStop(0, color(seed, 0));
-        bg.addColorStop(0.5, color(seed, 80));
-        bg.addColorStop(1, '#050607');
-        ctx.fillStyle = bg;
-        ctx.fillRect(0, 0, 512, 512);
-
-        ctx.globalCompositeOperation = 'screen';
-        for (let i = 0; i < 9; i += 1) {
-          const x = (seed >> (i % 16)) % 512;
-          const y = (seed >> ((i + 5) % 16)) % 512;
-          const radius = 80 + ((seed >> (i + 9)) % 140);
-          const glow = ctx.createRadialGradient(x, y, 0, x, y, radius);
-          glow.addColorStop(0, `hsla(${(seed + i * 37) % 360} 88% 68% / 0.32)`);
-          glow.addColorStop(1, 'rgba(0,0,0,0)');
-          ctx.fillStyle = glow;
-          ctx.beginPath();
-          ctx.arc(x, y, radius, 0, Math.PI * 2);
-          ctx.fill();
-        }
-
-        ctx.globalCompositeOperation = 'source-over';
-        ctx.fillStyle = 'rgba(0,0,0,0.42)';
-        ctx.fillRect(0, 0, 512, 512);
-        ctx.save();
-        ctx.translate(256, 278);
-        ctx.rotate(((seed % 15) - 7) * Math.PI / 180);
-        ctx.fillStyle = 'rgba(220,230,228,0.82)';
-        ctx.beginPath();
-        ctx.ellipse(0, -72, 54, 72, 0, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.fillStyle = 'rgba(20,22,24,0.86)';
-        ctx.beginPath();
-        ctx.ellipse(0, 78, 96, 150, 0, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.restore();
-
-        ctx.strokeStyle = 'rgba(255,255,255,0.13)';
-        ctx.lineWidth = 2;
-        for (let i = 0; i < 16; i += 1) {
-          const y = 42 + i * 29 + ((seed >> i) % 12);
-          ctx.beginPath();
-          ctx.moveTo(0, y);
-          ctx.bezierCurveTo(150, y - 38, 330, y + 44, 512, y - 8);
-          ctx.stroke();
-        }
-        try {
-          return canvas.toDataURL('image/jpeg', 0.9);
-        } catch {
-          return fallbackFrame(segment, index);
-        }
-      };
-
-      let frameIndex = 0;
-      let styleFrames = [];
-      const freshStyleFrameQuery = 'date=2026-07-18&folder=sd1_voiceover_FRESH_CONTENT_frames';
-      const freshMergedMovie = 'sd1_VOICEOVER_FRESH_CONTENT_NEG12X_RIGHT10X_300_CONTENT70_SLOWER10.mp4';
-      const playFreshMergedMovie = () => {
-        clearInterval(panel.storyboardFrameTimer);
-        panel.storyboardFrameTimer = null;
-        panel.showMovie(
-          `/api/dev/merged-preview-result?file=${encodeURIComponent(freshMergedMovie)}&t=${Date.now()}`,
-          'Movie 1 merged movie playing'
-        );
-      };
-      fetch(`/api/dev/style-frame-preview?${freshStyleFrameQuery}`)
-        .then((response) => response.ok ? response.json() : null)
-        .then((data) => {
-          styleFrames = Array.isArray(data?.frames) ? data.frames : [];
-          if (styleFrames.length) showFrame();
-        })
-        .catch(() => {});
-
-      const showFrame = () => {
-        if (styleFrames.length && frameIndex >= styleFrames.length) {
-          playFreshMergedMovie();
-          return;
-        }
-        const segment = segments[frameIndex % segments.length];
-        const incoming = liveImg.style.opacity === '1' ? liveImgB : liveImg;
-        const outgoing = incoming === liveImg ? liveImgB : liveImg;
-        const styleFrame = styleFrames.length ? styleFrames[frameIndex] : '';
-        if (styleFrame) {
-          incoming.src = `/api/dev/style-frame-preview?${freshStyleFrameQuery}&file=${encodeURIComponent(styleFrame)}&t=${Date.now()}`;
-        } else {
-          try {
-            incoming.src = drawFrame(segment, frameIndex);
-          } catch {
-            incoming.src = fallbackFrame(segment, frameIndex);
-          }
-        }
-        incoming.classList.remove('hidden');
-        void incoming.offsetWidth;
-        incoming.style.opacity = '1';
-        outgoing.style.opacity = '0';
-        panel.querySelector('.deforum-preview-text').textContent = styleFrame
-          ? `Movie 1 FRESH STYLE frame ${frameIndex + 1}/${styleFrames.length}`
-          : `${label} ${frameIndex + 1}/${segments.length}`;
-        frameIndex = styleFrames.length ? frameIndex + 1 : (frameIndex + 1) % segments.length;
-      };
-
-      panel.classList.remove('hidden');
-      panel.classList.add('visible');
-      showFrame();
-      const frameMs = Math.max(1200, Math.round((Number(storyboard?.render?.totalDurationSec || 90) * 1000) / 39));
-      panel.storyboardFrameTimer = setInterval(showFrame, frameMs);
-    };
-
-    panel.showPreview = (source, label, storyboard = null, fallbackSource = null) => {
-      const hasStoryboard = Boolean(storyboard?.segments?.length);
-      video.src = source;
-      video.style.display = hasStoryboard ? 'none' : 'block';
-      if (!hasStoryboard) {
-        liveImg.classList.add('hidden');
-        liveImg.style.opacity = '0';
-        liveImgB.classList.add('hidden');
-        liveImgB.style.opacity = '0';
-      }
-      resultPlayer.style.display = 'none';
-
-      header.querySelector('.deforum-record-status').style.display = 'inline';
-
-      isAnimationRunning = true;
-      animationStartTime = performance.now();
-      animationStartedAt = Date.now();
-      clearTimeout(stopTimer);
-      stopTimer = setTimeout(stopAnimationAndNotify, DURATION_MS);
-
-      
-      // Connection Check: Let the user know if SD is reachable from the browser
-      fetch('http://127.0.0.1:7860/sdapi/v1/options', { method: 'GET', mode: 'cors' })
-        .then(r => {
-           if (r.ok) appendChatMessage('assistant', '?? Stable Diffusion server connected and ready.');
-           else throw new Error('Status ' + r.status);
-        })
-        .catch(e => {
-           appendChatMessage('assistant', '?? SD Server Connection Failed: ' + e.message + '. Ensure Forge is running with --api and --cors-allow-origins=*');
-        });
-
-      // Sync preview video with main video if possible
-      const mainVid = scene3d?.getVideoMesh?.()?.videoElement || null;
-      if (mainVid && !mainVid.paused) {
-        video.currentTime = mainVid.currentTime;
-      }
-
-      video.onerror = () => {
-        if (fallbackSource && video.src !== fallbackSource) {
-          video.src = fallbackSource;
-          if (mainVid) video.currentTime = mainVid.currentTime;
-          video.play().catch(() => {});
-        }
-      };
-
-      panel.querySelector('.deforum-preview-text').textContent = label || 'Deforum Sequence';
-      panel.classList.remove('hidden');
-      panel.classList.add('visible');
-      if (!hasStoryboard) video.play().catch(() => {});
-
-      if (hasStoryboard) {
-        panel.showStoryboardFrames(storyboard, 'Movie 1 voice content frame');
-        // The native Deforum renderer owns its motion transforms, strength
-        // schedules, numbered-frame output and ffmpeg MP4 creation. Do not
-        // run the legacy raw img2img feedback loop alongside it.
-        void startNativeDeforumRender(storyboard, fallbackSource || source);
-        return;
-
-        let lastSegmentId = '';
-        let isGenerating = false;
-        let generationQueue = [];
-
-        // --- Cinematic "drop-and-lock" strength schedule ---
-        // Between prompt changes the figure stays completely stable/locked
-        // (high strength_schedule = low denoising). Right when a storyboard
-        // segment's prompt changes, strength drops for a short window so the
-        // AI can rewrite the figure (fast, deliberate movie-style
-        // transformation instead of a slow muddy fade), then snaps straight
-        // back to locked - avoiding the grain/grid that a flat mid-strength
-        // value produces when held too long.
-        // NOTE: kept below ~0.6 - at 0.70 the sampler discarded too much of
-        // the init image (including the live video mask blended into it),
-        // which lost the movie anchor entirely during the transition window.
-        const LOCKED_DENOISING = 0.40;       // strength_schedule ~0.60 (locked)
-        const TRANSITION_DENOISING = 0.55;   // strength_schedule ~0.45 (fast morph, video mask still holds)
-        const TRANSITION_WINDOW_FRAMES = 6;  // 5-8 frame window per guidance
-        let framesSinceSegmentChange = 999;
-        let lastPromptSegmentId = '';
-        // CLIP skip 2: ignores the final, most volatile layer of prompt
-        // interpretation, which is prone to single-frame grid lines/spikes.
-        const CLIP_SKIP = 2;
-        // videoGuideAlpha: how strongly the LIVE movie frame acts as a mask
-        // anchoring each generation. Pushed close to 1.0 so the real video
-        // content dominates over SD's own recycled output, keeping figures
-        // recognizable instead of drifting into abstract grid/grain/bubbles.
-        const videoGuideAlpha = 0.92;
-        // Every N generations, drop the SD feedback entirely and re-anchor to
-        // a pure, fresh video frame so the loop can never drift too far from
-        // real figures. More aggressive reset to combat initial instability.
-        const RESET_EVERY_N_FRAMES = 3;
-        let frameCount = 0;
-        // Deforum render/sampler settings.
-        // NOTE: 384 caused SDXL's classic "resolution too small" failure -
-        // the model starts tiling/repeating patterns across the canvas
-        // instead of rendering one coherent scene. SDXL needs to stay at
-        // 512+ to avoid this. Kept steps/cadence fast elsewhere instead.
-        const RENDER = 512;
-        stitchRenderSize = RENDER;
-        // Steps raised to 40 so the sampler has enough iterations even during
-        // the low-denoising "locked" phases (e.g. 30 * 0.40 = 12 steps) to
-        // fully resolve geometry instead of collapsing into a tiled pattern.
-        const STEPS = 30;
-        const CFG_SCALE = 7;
-        // Euler a / DPM++ SDE variants inject fresh stochastic noise every
-        // step, which produces grid/checkerboard artifacts when constrained
-        // by a feedback-loop init image. DPM++ 2M (Karras schedule) is far
-        // more stable. This Forge version splits sampler and schedule type
-        // into separate API fields (verified via /sdapi/v1/samplers and
-        // /sdapi/v1/schedulers).
-        const SAMPLER = "DPM++ 2M";
-        const SCHEDULER = "Karras";
-        const RESTORE_FACES = false;
-        // seed_behavior: "iter" -> start at seed and increment each frame.
-        let currentSeed = 3892608527;
-        const SEED_ITER_N = 1;
-        // ControlNet disabled: no SDXL-compatible model is installed.
-        let lastGeneratedB64 = null;
-
-
-        // Continuous video-init pacing: minimum ms between regenerations so the
-        // AI keeps re-reading fresh movie frames as the video plays. The
-        // isGenerating guard means we regenerate as fast as the GPU allows.
-        let lastGenTime = 0;
-        const minGenIntervalMs = 150; // Fast cadence for snappy transitions
-
-        // Draw the current movie frame (cover-fit) into a canvas context.
-        const drawVideoFrame = (ctx, w, h, alpha = 1) => {
-          const src = (mainVid && mainVid.readyState >= 2) ? mainVid
-            : (video && video.readyState >= 2) ? video : null;
-          if (!src || !src.videoWidth) return false;
-          const vRatio = src.videoWidth / src.videoHeight;
-          const cRatio = w / h;
-          let dw = w, dh = h, dx = 0, dy = 0;
-          if (vRatio > cRatio) { dw = h * vRatio; dx = (w - dw) / 2; }
-          else { dh = w / vRatio; dy = (h - dh) / 2; }
-          ctx.globalAlpha = alpha;
-          ctx.drawImage(src, dx, dy, dw, dh);
-          ctx.globalAlpha = 1;
-          return true;
-        };
-
-        // Build the img2img init image: previous SD frame blended with the
-        // live movie frame (strongly anchored) so figures stay recognizable.
-        // Every RESET_EVERY_N_FRAMES frames we skip the SD feedback layer
-        // entirely and use a pure video frame, preventing the loop from
-        // drifting into abstract grid/grain garbage over a long play session.
-        const buildInitFrame = async (w = RENDER, h = RENDER, warpScale = 1.0) => {
-          try {
-            const canvas = document.createElement('canvas');
-            canvas.width = w; canvas.height = h;
-            const ctx = canvas.getContext('2d');
-            let hasBase = false;
-            const doReset = (RESET_EVERY_N_FRAMES > 0) &&
-              (frameCount % RESET_EVERY_N_FRAMES === 0);
-
-            // Layer 1: previous generated frame (skipped on reset frames).
-            if (lastGeneratedB64 && !doReset) {
-              await new Promise((resolve) => {
-                const img = new Image();
-                img.onload = () => {
-                  if (warpScale !== 1.0) {
-                    // Micro zoom warp: physically smears/stretches the
-                    // previous frame's pixels (Deforum zoom-schedule style)
-                    // so the figure visibly melts/distorts into the next
-                    // form instead of just cross-fading.
-                    ctx.save();
-                    ctx.translate(w / 2, h / 2);
-                    ctx.scale(warpScale, warpScale);
-                    ctx.drawImage(img, -w / 2, -h / 2, w, h);
-                    ctx.restore();
-                  } else {
-                    ctx.drawImage(img, 0, 0, w, h);
-                  }
-                  hasBase = true;
-                  resolve();
-                };
-                img.onerror = resolve;
-                img.src = `data:image/png;base64,${lastGeneratedB64}`;
-              });
-            }
-
-            // Layer 2: live movie frame blended on top to steer the scene.
-            const drewVideo = drawVideoFrame(ctx, w, h, hasBase ? videoGuideAlpha : 1);
-            if (!hasBase && !drewVideo) return null;
-
-            frameCount += 1;
-            return canvas.toDataURL('image/jpeg', 0.92).split(',')[1];
-          } catch (e) {
-            return null; // tainted canvas / cross-origin video
-          }
-        };
-
-        // Color coherence (RGB mean/std match, a lightweight stand-in for
-        // Deforum's LAB color coherence). Without this, repeatedly feeding
-        // SD's own output back into itself lets brightness/color drift a
-        // little every frame; over many frames that drift compounds into a
-        // grainy, "pixelated burnout" look. Re-anchoring each new frame's
-        // color statistics to the live video frame keeps it stable.
-        const applyColorCoherence = async (generatedB64, w = RENDER, h = RENDER) => {
-          try {
-            const canvas = document.createElement('canvas');
-            canvas.width = w; canvas.height = h;
-            const ctx = canvas.getContext('2d');
-
-            const genImg = await new Promise((resolve, reject) => {
-              const img = new Image();
-              img.onload = () => resolve(img);
-              img.onerror = reject;
-              img.src = `data:image/png;base64,${generatedB64}`;
-            });
-            ctx.drawImage(genImg, 0, 0, w, h);
-            const genData = ctx.getImageData(0, 0, w, h);
-
-            const refCanvas = document.createElement('canvas');
-            refCanvas.width = w; refCanvas.height = h;
-            const refCtx = refCanvas.getContext('2d');
-            const drewRef = drawVideoFrame(refCtx, w, h, 1);
-            if (!drewRef) return generatedB64; // no reference frame available
-
-            const refData = refCtx.getImageData(0, 0, w, h);
-
-            const stats = (data) => {
-              let sums = [0, 0, 0], sqSums = [0, 0, 0];
-              const n = data.length / 4;
-              for (let i = 0; i < data.length; i += 4) {
-                for (let c = 0; c < 3; c++) sums[c] += data[i + c];
-              }
-              const means = sums.map((s) => s / n);
-              for (let i = 0; i < data.length; i += 4) {
-                for (let c = 0; c < 3; c++) {
-                  const d = data[i + c] - means[c];
-                  sqSums[c] += d * d;
-                }
-              }
-              const stds = sqSums.map((s) => Math.sqrt(s / n) || 1);
-              return { means, stds };
-            };
-
-            const genStats = stats(genData.data);
-            const refStats = stats(refData.data);
-
-            const pixels = genData.data;
-            for (let i = 0; i < pixels.length; i += 4) {
-              for (let c = 0; c < 3; c++) {
-                const ratio = refStats.stds[c] / genStats.stds[c];
-                let v = (pixels[i + c] - genStats.means[c]) * ratio + refStats.means[c];
-                pixels[i + c] = Math.max(0, Math.min(255, v));
-              }
-            }
-            ctx.putImageData(genData, 0, 0);
-            return canvas.toDataURL('image/jpeg', 0.95).split(',')[1];
-          } catch (e) {
-            return generatedB64; // fall back to uncorrected frame on any error
-          }
-        };
-
-        const generateLiveFrame = async (segment) => {
-          if (isGenerating) return;
-          isGenerating = true;
-          panel.querySelector('.deforum-preview-dot').style.background = '#ff8c00';
-          panel.querySelector('.deforum-preview-text').textContent = 'SD Generating...';
-
-          try {
-            const controller = new AbortController();
-            const timeoutId = setTimeout(() => controller.abort(), 30000);
-
-            // Prompt-shock tracking: reset the damping counter whenever the
-            // storyboard segment (and therefore the prompt) changes.
-            if (segment.id !== lastPromptSegmentId) {
-              lastPromptSegmentId = segment.id;
-              framesSinceSegmentChange = 0;
-            } else {
-              framesSinceSegmentChange += 1;
-            }
-
-            // Drop-and-lock: use the aggressive transition strength for a
-            // short window right at the prompt change, then snap back to the
-            // locked/stable strength for the rest of the segment.
-            const inTransitionWindow = framesSinceSegmentChange < TRANSITION_WINDOW_FRAMES;
-
-            // Morph-warp peak: the 2 frames right after the prompt change get
-            // a violent zoom in/out (smears the previous frame's pixels, a
-            // poor-man's version of Deforum's zoom-schedule morph) paired with
-            // a strength dip so the smeared structure survives and "melts"
-            // into the new form instead of SD just repainting over it.
-            const isWarpPeak = inTransitionWindow &&
-              (framesSinceSegmentChange === 1 || framesSinceSegmentChange === 2);
-            const warpScale = framesSinceSegmentChange === 1 ? 1.12
-              : framesSinceSegmentChange === 2 ? 0.90
-              : 1.0;
-
-            const effectiveDenoising = isWarpPeak ? 0.32
-              : inTransitionWindow ? TRANSITION_DENOISING
-              : LOCKED_DENOISING;
-            // Noise tied to strength so the two schedules never fight each
-            // other (a common cause of the "boiling water" bubble look) -
-            // near-zero extra noise while locked, a small hint during the
-            // fast transition window to help resolve the new geometry.
-            const effectiveNoiseMultiplier = 0.6 + 0.5 * effectiveDenoising;
-
-            // During the warp peak, nudge the prompt toward a liquid/melting
-            // description so SD's own interpretation matches the physical
-            // pixel smear rather than fighting it with a "clean" pose.
-            const effectivePrompt = isWarpPeak
-              ? `${segment.prompt}, liquid melting transformation, dissolving and reforming, dynamic morph blur`
-              : segment.prompt;
-
-            // Deforum feedback init: previous frame + live video guide.
-            const initFrame = await buildInitFrame(RENDER, RENDER, warpScale);
-            const useImg2Img = !!initFrame;
-            const endpoint = useImg2Img
-              ? 'http://127.0.0.1:7860/sdapi/v1/img2img'
-              : 'http://127.0.0.1:7860/sdapi/v1/txt2img';
-
-            const payload = {
-              prompt: effectivePrompt,
-              negative_prompt: segment.negativePrompt,
-              steps: STEPS,
-              width: RENDER,
-              height: RENDER,
-              cfg_scale: CFG_SCALE,
-              sampler_name: SAMPLER,
-              scheduler: SCHEDULER,
-              restore_faces: RESTORE_FACES,
-              seed: currentSeed,
-              save_images: true,
-              override_settings: { CLIP_stop_at_last_layers: CLIP_SKIP },
-              override_settings_restore_afterwards: false
-            };
-            // seed_behavior "iter": advance the seed for the next frame.
-            currentSeed += SEED_ITER_N;
-            if (useImg2Img) {
-              payload.init_images = [initFrame];
-              payload.denoising_strength = effectiveDenoising;
-              payload.initial_noise_multiplier = effectiveNoiseMultiplier;
-            }
-
-            const resp = await fetch(endpoint, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify(payload),
-              signal: controller.signal
-            });
-            clearTimeout(timeoutId);
-
-            if (resp.ok) {
-              const data = await resp.json();
-              if (data.images && data.images[0]) {
-                const coherentB64 = await applyColorCoherence(data.images[0], RENDER, RENDER);
-                const newSrc = `data:image/png;base64,${coherentB64}`;
-
-                // Store this frame so the next generation feeds back from it
-                // (Deforum-style temporal coherence / motion).
-                lastGeneratedB64 = coherentB64;
-
-                // Preload the new frame off-screen, then cross-fade/morph from
-                // the previous frame to this one so the scene animates smoothly
-                // instead of hard-cutting or freezing.
-                await new Promise((resolve) => {
-                  const preload = new Image();
-                  preload.onload = () => {
-                    // Decide which layer is currently visible and fade to the
-                    // other one holding the new frame.
-                    const showingB = liveImgB.style.opacity === '1';
-                    const incoming = showingB ? liveImg : liveImgB;
-                    const outgoing = showingB ? liveImgB : liveImg;
-                    incoming.src = newSrc;
-                    incoming.classList.remove('hidden');
-                    // Force layout so the opacity transition actually runs.
-                    void incoming.offsetWidth;
-                    incoming.style.opacity = '1';
-                    outgoing.style.opacity = '0';
-                    resolve();
-                  };
-                  preload.onerror = resolve;
-                  preload.src = newSrc;
-                });
-
-                const statusText = isWarpPeak ? 'SD Melting…' : inTransitionWindow ? 'SD Morphing…' : 'SD Deforum Flow';
-                const remainingMs = DURATION_MS - (performance.now() - (animationStartTime || performance.now()));
-                panel.querySelector('.deforum-preview-text').textContent =
-                  `${statusText} (${Math.max(0, remainingMs / 1000).toFixed(0)}s left)`;
-              }
-            } else {
-              panel.querySelector('.deforum-preview-text').textContent = 'SD Server Error';
-            }
-          } catch (e) {
-            panel.querySelector('.deforum-preview-text').textContent = 'SD Offline';
-          } finally {
-            panel.querySelector('.deforum-preview-dot').style.background = '#58d6ae';
-            isGenerating = false;
-          }
-        };
-
-        const updateLoop = () => {
-          if (!panel.classList.contains('visible') || !isAnimationRunning) return;
-
-          const refTime = (mainVid && !mainVid.paused) ? mainVid.currentTime : video.currentTime;
-          const currentSeg = storyboard.segments.find(s => refTime >= s.startSec && refTime <= s.endSec);
-          
-          if (currentSeg) {
-            promptOverlay.textContent = `Prompt: ${currentSeg.prompt.slice(0, 100)}...`;
-            // Continuous "video init": regenerate on segment change OR after a
-            // minimum interval, always using the latest movie frame as init.
-            const now = performance.now();
-            const segmentChanged = currentSeg.id !== lastSegmentId;
-            const intervalElapsed = (now - lastGenTime) >= minGenIntervalMs;
-            if (!isGenerating && (segmentChanged || intervalElapsed)) {
-              lastSegmentId = currentSeg.id;
-              lastGenTime = now;
-              // Trigger generation but DON'T hide the old image yet
-              generateLiveFrame(currentSeg);
-            }
-          }
-          
-          if (mainVid && Math.abs(video.currentTime - mainVid.currentTime) > 1.0) {
-             video.currentTime = mainVid.currentTime;
-          }
-
-          requestAnimationFrame(updateLoop);
-        };
-        updateLoop();
-      }
-    };
-
-    panel.showMovie = (source, label = 'Merged Deforum Preview') => {
-      clearTimeout(stopTimer);
-      clearInterval(deforumPreviewTimer);
-      clearInterval(panel.crossfadeTimer);
-      clearInterval(panel.storyboardFrameTimer);
-      deforumPreviewTimer = null;
-      panel.storyboardFrameTimer = null;
-      isAnimationRunning = false;
-      video.pause();
-      video.removeAttribute('src');
-      liveImg.classList.add('hidden');
-      liveImg.style.opacity = '0';
-      liveImgB.classList.add('hidden');
-      liveImgB.style.opacity = '0';
-      header.querySelector('.deforum-record-status').style.display = 'none';
-      resultPlayer.src = source;
-      resultPlayer.style.display = 'block';
-      resultPlayer.currentTime = 0;
-      panel.querySelector('.deforum-preview-dot').style.background = '#58d6ae';
-      panel.querySelector('.deforum-preview-text').textContent = label;
-      panel.classList.remove('hidden');
-      panel.classList.add('visible');
-      resultPlayer.play().catch(() => {});
-    };
-
-    panel.showCrossfadePlaylist = async (options = {}) => {
-      const movieName = String(options?.movie || 'Synthetic_Desires_1.mp4').trim();
-      const isMovie1 = /synthetic_desires_1\.mp4$/i.test(movieName);
-      const clips = isMovie1 ? [
-        { source: `${R2_BASE}/Synthetic_Desires_1.mp4`, label: 'Movie 1 preview / voice-over content' }
-      ] : [
-        { file: 'sd3_DEFOURM_18X_RIGHT300_FADEOUT_TO0_CONTENT75_TOP_90SEC.mp4', label: 'Deforum fade out / content 75%' },
-        { file: 'sd3_DEFOURM_18X_RIGHT300_CONTENT75_TOP_90SEC.mp4', label: 'Deforum 18x / content 75%' },
-        { file: 'sd3_DEFOURM_18X_RIGHT300_CONTENT70_TOP_90SEC.mp4', label: 'Deforum 18x / content 70%' },
-        { file: 'sd3_DEFOURM_18X_RIGHT300_CONTENT80_TOP_90SEC.mp4', label: 'Deforum 18x / content 80%' }
-      ];
-      const switchEveryMs = 50000;
-      const fadeMs = 2500;
-      let playlistIndex = 0;
-      let activeVideo = resultPlayer;
-      let incomingVideo = video;
-
-      clearTimeout(stopTimer);
-      clearInterval(deforumPreviewTimer);
-      clearInterval(panel.crossfadeTimer);
-      clearInterval(panel.crossfadePlaybackTimer);
-      isAnimationRunning = false;
-      liveImg.classList.add('hidden');
-      liveImgB.classList.add('hidden');
-      promptOverlay.style.display = 'none';
-      header.querySelector('.deforum-record-status').style.display = 'none';
-
-      [resultPlayer, video].forEach((player, index) => {
-        player.autoplay = true;
-        player.muted = true;
-        player.loop = true;
-        player.playsInline = true;
-        player.controls = index === 0;
-        player.style.display = 'block';
-        player.style.transition = `opacity ${fadeMs}ms ease`;
-        player.style.opacity = index === 0 ? '1' : '0';
-        player.style.zIndex = index === 0 ? '21' : '20';
-      });
-
-      const loadClip = async (player, clip) => {
-        player.src = clip.source || `/api/dev/merged-preview-result?file=${encodeURIComponent(clip.file)}&t=${Date.now()}`;
-        await new Promise((resolve, reject) => {
-          const timeout = setTimeout(() => reject(new Error('Preview metadata timed out.')), 15000);
-          player.onloadedmetadata = () => { clearTimeout(timeout); resolve(); };
-          player.onerror = () => { clearTimeout(timeout); reject(new Error(`Could not load ${clip.file || clip.source}.`)); };
-        });
-        player.currentTime = 0;
-        const playNow = () => player.play().catch((error) => {
-          panel.querySelector('.deforum-preview-text').textContent = error.message || 'Tap preview to play';
-        });
-        await playNow();
-        player.oncanplay = playNow;
-        player.onpause = () => {
-          if (panel.classList.contains('visible') && player.readyState >= 2 && !player.ended) {
-            setTimeout(playNow, 120);
-          }
-        };
-      };
-
-      const updateLabel = () => {
-        panel.querySelector('.deforum-preview-text').textContent = clips.length > 1
-          ? `Movie ${playlistIndex + 1}/${clips.length}: ${clips[playlistIndex].label} - next fade in 50s`
-          : `${clips[playlistIndex].label} - generating on the fly`;
-      };
-
-      panel.classList.remove('hidden');
-      panel.classList.add('visible');
-
-      try {
-        await loadClip(activeVideo, clips[playlistIndex]);
-        updateLabel();
-      } catch (error) {
-        panel.querySelector('.deforum-preview-text').textContent = error.message;
-        return;
-      }
-
-      if (clips.length > 1) panel.crossfadeTimer = setInterval(async () => {
-        const nextIndex = (playlistIndex + 1) % clips.length;
-        incomingVideo.style.transition = 'none';
-        incomingVideo.style.opacity = '0';
-        incomingVideo.style.zIndex = '22';
-        try {
-          await loadClip(incomingVideo, clips[nextIndex]);
-          requestAnimationFrame(() => {
-            incomingVideo.style.transition = `opacity ${fadeMs}ms ease`;
-            incomingVideo.style.opacity = '1';
-          });
-          setTimeout(() => {
-            activeVideo.pause();
-            activeVideo.style.opacity = '0';
-            activeVideo.style.zIndex = '20';
-            [activeVideo, incomingVideo] = [incomingVideo, activeVideo];
-            playlistIndex = nextIndex;
-            updateLabel();
-          }, fadeMs);
-        } catch (error) {
-          panel.querySelector('.deforum-preview-text').textContent = error.message;
-        }
-      }, switchEveryMs);
-
-      panel.crossfadePlaybackTimer = setInterval(() => {
-        if (!panel.classList.contains('visible')) return;
-        const currentPlayer = activeVideo;
-        if (currentPlayer?.readyState >= 2 && currentPlayer.paused && !currentPlayer.ended) {
-          currentPlayer.play().catch(() => {});
-        }
-      }, 1000);
-
-    };
-
-    panel.hidePreview = hidePanel;
-
-    deforumPreviewPanel = panel;
-    return deforumPreviewPanel;
-  }
-
-  window.__showDeforumMergedPreview = (
-    source = '/api/dev/merged-preview-result?file=sd3_exact_voiceover_real_20x20_slow.mp4',
-    label = 'Movie 3 English voice content + Movie 3 real frames'
-  ) => {
-    ensureDeforumPreviewPanel().showMovie(source, label);
-  };
-
-  window.__showDeforumCrossfadePlaylist = (movie = 'Synthetic_Desires_1.mp4') => ensureDeforumPreviewPanel().showCrossfadePlaylist({ movie });
-
-  window.__buildSilentVoiceOverStoryboard = (movie = 'Synthetic_Desires_1.mp4') => runStoryMode({ movie, silent: true });
-
   function getAiLogTextForCopy() {
     const parts = [];
 
@@ -5044,14 +4409,56 @@ const startGestureApp = () => {
     }
   }
 
+  function updateModeSelectionUnlockUi(button, unlocked, clicks, modeLabel, unlockedTitle) {
+    if (!button) return;
+    button.classList.toggle('mode-selection-locked', !unlocked);
+    button.setAttribute('aria-disabled', unlocked ? 'false' : 'true');
+    button.title = modeLabel;
+  }
+
   if (aiModeBrain) {
-    aiModeBrain.addEventListener && aiModeBrain.addEventListener('click', () => { void switchToAiMode('brain'); });
+    updateModeSelectionUnlockUi(aiModeBrain, brainModeUnlocked, brainModeUnlockClicks, 'Brain', 'Switch to Brain mode (local)');
+    aiModeBrain.addEventListener && aiModeBrain.addEventListener('click', () => {
+      if (!brainModeUnlocked) {
+        brainModeUnlockClicks = Math.min(SPLIT_MODE_UNLOCK_CLICKS, brainModeUnlockClicks + 1);
+        brainModeUnlocked = brainModeUnlockClicks >= SPLIT_MODE_UNLOCK_CLICKS;
+        updateModeSelectionUnlockUi(aiModeBrain, brainModeUnlocked, brainModeUnlockClicks, 'Brain', 'Switch to Brain mode (local)');
+        if (!brainModeUnlocked) return;
+      }
+      void switchToAiMode('brain');
+    });
   }
   if (aiModeCloud) {
-    aiModeCloud.addEventListener && aiModeCloud.addEventListener('click', () => { void switchToAiMode('cloud'); });
+    updateModeSelectionUnlockUi(aiModeCloud, cloudModeUnlocked, cloudModeUnlockClicks, 'Cloud', 'Switch to Cloud mode (Gemini AI)');
+    aiModeCloud.addEventListener && aiModeCloud.addEventListener('click', () => {
+      if (!cloudModeUnlocked) {
+        cloudModeUnlockClicks = Math.min(SPLIT_MODE_UNLOCK_CLICKS, cloudModeUnlockClicks + 1);
+        cloudModeUnlocked = cloudModeUnlockClicks >= SPLIT_MODE_UNLOCK_CLICKS;
+        updateModeSelectionUnlockUi(aiModeCloud, cloudModeUnlocked, cloudModeUnlockClicks, 'Cloud', 'Switch to Cloud mode (Gemini AI)');
+        if (!cloudModeUnlocked) return;
+      }
+      void switchToAiMode('cloud');
+    });
   }
+
+  function updateSplitModeUnlockUi() {
+    if (!aiModeSplit) return;
+    aiModeSplit.classList.toggle('split-mode-locked', !splitModeUnlocked);
+    aiModeSplit.setAttribute('aria-disabled', splitModeUnlocked ? 'false' : 'true');
+    aiModeSplit.title = 'Split';
+  }
+
   if (aiModeSplit) {
-    aiModeSplit.addEventListener && aiModeSplit.addEventListener('click', () => { void switchToAiMode('split'); });
+    updateSplitModeUnlockUi();
+    aiModeSplit.addEventListener && aiModeSplit.addEventListener('click', () => {
+      if (!splitModeUnlocked) {
+        splitModeUnlockClicks = Math.min(SPLIT_MODE_UNLOCK_CLICKS, splitModeUnlockClicks + 1);
+        splitModeUnlocked = splitModeUnlockClicks >= SPLIT_MODE_UNLOCK_CLICKS;
+        updateSplitModeUnlockUi();
+        if (!splitModeUnlocked) return;
+      }
+      void switchToAiMode('split');
+    });
   }
     if (aiModeGemma) {
     updateGemmaModeAvailability();
@@ -5236,19 +4643,27 @@ const startGestureApp = () => {
     return true;
   }
 
+  function syncMuteButton(muted) {
+    if (btnMute) btnMute.setAttribute('aria-pressed', String(Boolean(muted)));
+  }
+
+  function syncVolumeSlider(volume) {
+    if (videoVolume) videoVolume.value = String(Math.round(volume * 100));
+  }
+
   function setMuteState(shouldMute) {
     const vm = scene3d?.getVideoMesh?.();
     if (!vm) return false;
 
     if (bgAudioActive) {
       bgAudio.muted = shouldMute;
-      if (btnMute) safeSetText(btnMute, shouldMute ? '🔇' : '🔊');
+      syncMuteButton(shouldMute);
       return true;
     }
 
     if (!vm.videoElement) return false;
     vm.videoElement.muted = shouldMute;
-    if (btnMute) safeSetText(btnMute, shouldMute ? '🔇' : '🔊');
+    syncMuteButton(shouldMute);
     return true;
   }
 
@@ -5257,18 +4672,19 @@ const startGestureApp = () => {
     if (!vm) return false;
     const clamped = Math.max(0, Math.min(100, percent));
     const volume = clamped / 100;
+    syncVolumeSlider(volume);
 
     if (bgAudioActive) {
       bgAudio.volume = volume;
       bgAudio.muted = volume <= 0;
-      if (btnMute) safeSetText(btnMute, bgAudio.muted ? '🔇' : '🔊');
+      syncMuteButton(bgAudio.muted);
       return true;
     }
 
     if (!vm.videoElement) return false;
     vm.videoElement.volume = volume;
     vm.videoElement.muted = volume <= 0;
-    if (btnMute) safeSetText(btnMute, vm.videoElement.muted ? '🔇' : '🔊');
+    syncMuteButton(vm.videoElement.muted);
     return true;
   }
 
@@ -5280,7 +4696,8 @@ const startGestureApp = () => {
       const next = Math.max(0, Math.min(1, bgAudio.volume + delta));
       bgAudio.volume = next;
       bgAudio.muted = next <= 0;
-      if (btnMute) safeSetText(btnMute, bgAudio.muted ? '🔇' : '🔊');
+      syncMuteButton(bgAudio.muted);
+      syncVolumeSlider(next);
       return true;
     }
 
@@ -5288,7 +4705,8 @@ const startGestureApp = () => {
     const next = Math.max(0, Math.min(1, vm.videoElement.volume + delta));
     vm.videoElement.volume = next;
     vm.videoElement.muted = next <= 0;
-    if (btnMute) safeSetText(btnMute, vm.videoElement.muted ? '🔇' : '🔊');
+    syncMuteButton(vm.videoElement.muted);
+    syncVolumeSlider(next);
     return true;
   }
 
@@ -5309,10 +4727,6 @@ const startGestureApp = () => {
     const wasSelectedMode = selectedConversationSurfaceMode === 'podcast' ? 'podcast' : 'chat';
     const wasPodcastActive = isPodcastConversationSurfaceActive();
     const micWasLive = Boolean(voiceManager?.isListening || voiceManager?.keepListening || isVoiceSessionActive);
-    const shouldAutoStartChatMic = Boolean(
-      targetMode === 'chat'
-      && (options?.autoStartMic === true || (options?.autoStartMic !== false && wasSelectedMode === 'podcast'))
-    );
 
     if (targetMode === 'podcast' && wasSelectedMode === 'podcast' && wasPodcastActive) {
       pendingFreeChatMicActivation = false;
@@ -5364,14 +4778,20 @@ const startGestureApp = () => {
       if (wasPodcastActive) {
         return true;
       }
-      const started = await startPublicPodcastAiConversation({ source: options?.source || 'mode-switch' });
+        if (shouldAnnounce && wasSelectedMode !== 'podcast') {
+          await announceConversationSurfaceMode('podcast', { waitForSpeech: true });
+        }
+      showPodcastStartBubble();
+      let started = false;
+      try {
+        started = await startPublicPodcastAiConversation({ source: options?.source || 'mode-switch' });
+      } finally {
+        hidePodcastStartBubble();
+      }
       if (!started) {
         selectedConversationSurfaceMode = 'chat';
         updateConversationModeUi();
         return false;
-      }
-      if (shouldAnnounce && wasSelectedMode !== 'podcast' && targetMode !== 'podcast') {
-        announceConversationSurfaceMode('podcast');
       }
       return started;
     }
@@ -5393,19 +4813,15 @@ const startGestureApp = () => {
     if (shouldAnnounce && (wasSelectedMode !== 'chat' || wasPodcastActive || micWasLive)) {
       announceConversationSurfaceMode('chat');
     }
-    if (shouldAutoStartChatMic) {
-      pendingFreeChatMicActivation = true;
-      setTimeout(() => {
-        if (!pendingFreeChatMicActivation) return;
-        void startFreeChatMicSession({ silentFailure: true });
-      }, 80);
-    } else {
-      pendingFreeChatMicActivation = false;
-    }
+    pendingFreeChatMicActivation = false;
     return true;
   }
 
   async function startFreeChatMicSession(options = {}) {
+    if (options?.userInitiated !== true) {
+      pendingFreeChatMicActivation = false;
+      return false;
+    }
     if (!voiceManager || isPodcastGuestParticipationEnabled()) {
       pendingFreeChatMicActivation = false;
       return false;
@@ -6266,8 +5682,6 @@ const startGestureApp = () => {
       `Questioning angle for turn ${turnNumber}: ${_angleHint}`,
       'Ask one specific follow-up that digs into one of the anchors, references, or observations above · something Muse has not yet been asked.',
       'Stay curious and concrete. Avoid abstract dogma, generic philosophy, and canned interview phrasing.',
-      'Tone: calm, unhurried, gentle — never urgent or excited. Speak softly, like a late-night radio host.',
-      'IMPORTANT: Write your question entirely in French (natural, conversational French).',
       'Return one short question only. No labels. No lists. No mention of AI, prompts, engines, or templates.'
     ].filter(Boolean).join('\n');
   }
@@ -6284,12 +5698,17 @@ const startGestureApp = () => {
     if (/\b(welcome back|welcome listener|hello listener|as host a|as your host|as whimsical|your portrayal|\bpodcast host\b|\bthis podcast\b|\bthis episode\b)\b/.test(lower)) return '';
     // Strip trailing em-dash fragments: "...work\u2014How does?" \u2192 "...work"
     normalized = normalized.replace(/\u2014[^\u2014.!?]{0,40}[.!?]?$/, '').trim();
-    // Reject questions that trail off with a dangling preposition/conjunction (model cut off mid-sentence)
-    if (/\b(with|in|of|for|on|at|by|from|to|and|or|the|a|an|its|their|this|that|between|through|across|into|about|about)\s*\?$/.test(normalized)) return '';
+    const looksLikeQuestion = /\b(?:what|why|how|when|where|who|which|do|does|did|is|are|can|could|would|should|will|if|might|may|shall)\b/i.test(lower)
+      || /\?$/.test(normalized);
+    if (!looksLikeQuestion) return '';
     const firstSentence = normalized.split(/(?<=[?!\.])\s+/)[0] || normalized;
-    const trimmed = firstSentence.replace(/[.!]+$/g, '').trim();
+    let trimmed = firstSentence.replace(/[.!]+$/g, '').trim();
     if (!trimmed) return '';
-    return /\?$/.test(trimmed) ? trimmed : `${trimmed}?`;
+    if (!/\?$/.test(trimmed)) {
+      trimmed = trimmed.replace(/[?!.]+$/g, '').trim();
+      return `${trimmed}?`;
+    }
+    return trimmed;
   }
 
   async function buildPodcastAutonomousHostQuestion(turnNumber = 1, options = {}) {
@@ -6440,9 +5859,7 @@ const startGestureApp = () => {
       references ? `Reference cues: ${references}.` : '',
       sceneContext ? sceneContext : '',
       'Reply in plain prose only · no verse, no line breaks, no poem format.',
-      'Tone: calm, dreamy, unhurried — never urgent, dramatic, or breathless.',
-      'IMPORTANT: Reply entirely in French (natural, poetic French).',
-      'Use 1 short complete sentence, 25 words maximum. Finish the thought. No lists. No mention of AI, prompt, engine, or templates.'
+      'Use 1-2 short complete sentences. Each sentence must finish a thought. No lists. No mention of AI, prompt, engine, or templates.'
     ].filter(Boolean).join('\n');
   }
 
@@ -6499,7 +5916,7 @@ const startGestureApp = () => {
           // matching the same pattern used by background enrichment calls (which reliably succeed).
           const rawText = String(await voiceManager._callGeminiEphemeralPrompt(prompt, {
             temperature: 0.85,
-            maxOutputTokens: 320,
+            maxOutputTokens: 180,
             timeoutMs: PODCAST_GUEST_CLOUD_EXPANSION_TIMEOUT_MS
           }) || '').trim();
           response = String(voiceManager?._normalizeCloudGuestExpansionText?.(rawText) || '').trim();
@@ -6514,8 +5931,7 @@ const startGestureApp = () => {
               audio: false,
               vision: false
             });
-            attempt++;
-            continue;
+            return null;
           }
           if (!recentBlocklist.has(response.toLowerCase())) break;
           voiceManager?.onAiLog?.({
@@ -6946,7 +6362,12 @@ const startGestureApp = () => {
   }
 
   function buildPublicPodcastAiMovieChangeLines(movie = '') {
-    return [];
+    const nextMovie = String(movie || voiceManager?.currentMovie || '').trim();
+    if (!nextMovie) return [];
+    const title = formatMovieTitleForPodcast(nextMovie);
+    return [
+      { speaker: 'hostA', text: `Moving on: we are now watching ${title}.` }
+    ];
   }
 
   function resumePublicPodcastAiAfterMovieChange(movie = '') {
@@ -6961,7 +6382,6 @@ const startGestureApp = () => {
     publicPodcastAiMovie = nextMovie;
     publicPodcastAiTurnNumber = 0;
     publicPodcastAiStartInFlight = false;
-    _podcastPrefetch = null;
     podcastTrainingEnabled = true;
 
     // On movie switch: clear per-movie last-line pointers so the new film
@@ -6986,21 +6406,12 @@ const startGestureApp = () => {
     injectPodcastNarration(handoffLines, { cancelActive: false, prioritize: true, force: true });
     updatePublicPodcastAiButtonState();
     if (!voiceManager?.synthesis?.speaking) {
-      setTimeout(() => {
-        drainPodcastNarrationQueue(true);
-        setTimeout(() => schedulePublicPodcastAiContinue(0), 100);
-      }, 30);
-    } else {
-      setTimeout(() => schedulePublicPodcastAiContinue(0), 100);
+      setTimeout(() => drainPodcastNarrationQueue(true), 30);
     }
   }
 
   async function startPublicPodcastAiConversation(options = {}) {
     if (!publicPodcastAiEnabled || !podcastEngine || !voiceManager) return false;
-    if (storyVoiceOverEnabled) {
-      stopPublicPodcastAiConversation();
-      return false;
-    }
     selectedConversationSurfaceMode = 'podcast';
 
     revealAiChatPanel({ focusInput: false });
@@ -7187,16 +6598,52 @@ const startGestureApp = () => {
     }
     lastConversationSurfaceAnnouncement = { mode: normalizedMode, at: now };
     const bubbleText = normalizedMode === 'podcast'
-      ? 'Podcast mode.'
+      ? 'Podcast.'
       : 'Free chat.';
     const speechText = normalizedMode === 'podcast'
-      ? 'Podcast mode.'
+      ? 'Podcast.'
       : 'Free chat.';
     appendChatMessage('assistant', bubbleText);
     showAiSpeech(speechText, true);
-    if (voiceManager?.speak) {
-      voiceManager.speak(speechText, { speaker: 'system', context: 'mode', force: true });
+    const speechOptions = normalizedMode === 'podcast'
+      ? { speaker: 'assistant', context: 'mode', force: true, rate: 0.88, pitch: 1.08, volume: 0.45 }
+      : { speaker: 'system', context: 'mode', force: true };
+    if (!voiceManager?.speak) return Promise.resolve();
+    if (!options?.waitForSpeech) {
+      voiceManager.speak(speechText, speechOptions);
+      return Promise.resolve();
     }
+    return new Promise((resolve) => {
+      const finish = () => {
+        clearTimeout(timeout);
+        resolve();
+      };
+      const timeout = setTimeout(finish, 3000);
+      voiceManager.speak(speechText, { ...speechOptions, onEnd: finish });
+    });
+  }
+
+  function announceGuidePodcastStart() {
+    const text = 'Starting Podcast in a sec...';
+    appendChatMessage('assistant', text);
+    showAiSpeech(text, true);
+    if (!voiceManager?.speak) return Promise.resolve();
+    return new Promise((resolve) => {
+      const finish = () => {
+        clearTimeout(timeout);
+        resolve();
+      };
+      const timeout = setTimeout(finish, 3000);
+      voiceManager.speak(text, {
+        speaker: 'assistant',
+        context: 'mode',
+        force: true,
+        rate: 0.88,
+        pitch: 1.08,
+        volume: 0.45,
+        onEnd: finish
+      });
+    });
   }
 
   function clearPodcastGuestPromptUi(source = 'mic') {
@@ -8782,13 +8229,13 @@ const startGestureApp = () => {
 
   function pickPodcastVoiceProfiles() {
     // Host A: measured interviewer pace. Host B: per-film voice character from movieBrains voiceProfile.
-    const hostAPitch = 0.9;    // Slightly lower so Host A separates from Muse more clearly
-    const hostARate = 0.82;    // Calm, unhurried interviewer cadence
+    const hostAPitch = 0.95;   // Warm natural female tone
+    const hostARate = 0.93;    // Natural interviewer speed
 
     // Pull per-film pitch/rate from the loaded movie brain's voiceProfile
     const movieVP = voiceManager?.currentMovieBrain?.voiceProfile || {};
     const hostBPitch = Number.isFinite(movieVP.pitch) ? Math.max(0.80, Math.min(1.20, movieVP.pitch)) : 0.97;
-    const hostBRate  = Number.isFinite(movieVP.rate)  ? Math.max(0.75, Math.min(0.90, movieVP.rate))  : 0.80;
+    const hostBRate  = Number.isFinite(movieVP.rate)  ? Math.max(0.78, Math.min(1.02, movieVP.rate))  : 0.88;
     const movieVoiceHints = Array.isArray(movieVP.voiceHints) ? movieVP.voiceHints.map(h => String(h).toLowerCase()) : [];
 
     const priorHostA = podcastVoiceProfiles?.hostA || null;
@@ -8796,17 +8243,15 @@ const startGestureApp = () => {
 
     if (!voiceManager?.voices?.length) {
       podcastVoiceProfiles = {
-        hostA: { voice: null, pitch: 0.86, rate: 0.9 },
-        hostB: { voice: null, pitch: 1.14, rate: 0.98 }
+        hostA: { voice: null, pitch: hostAPitch, rate: hostARate },
+        hostB: { voice: null, pitch: hostBPitch, rate: hostBRate }
       };
       return podcastVoiceProfiles;
     }
 
     const voices = voiceManager.voices.filter(Boolean);
-    // Podcast speaks French: prefer fr-* voices, fall back to English, then anything.
-    const frenchVoices = voices.filter((voice) => /^fr/i.test(String(voice?.lang || '')));
     const englishVoices = voices.filter((voice) => /en/i.test(String(voice?.lang || '')));
-    const pool = frenchVoices.length ? frenchVoices : (englishVoices.length ? englishVoices : voices);
+    const pool = englishVoices.length ? englishVoices : voices;
     
     // Debug: What does the user actually have?
     if (voices.length > 0 && !window._loggedVoices) {
@@ -8815,7 +8260,7 @@ const startGestureApp = () => {
     }
     const podcastPool = pool;
     // Extended female name pattern · the Muse is ALWAYS a woman, matching the film's figure.
-    const femaleVoicePattern = /female|woman|zira|aria|jenny|samantha|ava|serena|allison|libby|victoria|susan|hazel|amber|google us english.*female|siri.*female|karen|moira|fiona|tessa|veena|alice|lisa|nikita|hortense|julie|denise|eloise|vivienne|charlotte|coralie|jacqueline|yvette|brigitte|celine|audrey|amelie|amélie|pauline|virginie|léa|lea\b/i;
+    const femaleVoicePattern = /female|woman|zira|aria|jenny|samantha|ava|serena|allison|libby|victoria|susan|hazel|amber|google us english.*female|siri.*female|karen|moira|fiona|tessa|veena|alice|lisa|nikita/i;
     const maleVoicePattern = /male|man|guy|david|mark|james|george|roger|eric|jason|ryan|andrew|christopher|daniel|reed|thomas/i;
     const likelyFemaleVoice = (voice) => femaleVoicePattern.test(String(voice?.name || ''));
     const likelyMaleVoice = (voice) => !likelyFemaleVoice(voice) && maleVoicePattern.test(String(voice?.name || ''));
@@ -8834,10 +8279,10 @@ const startGestureApp = () => {
       const name = String(voice?.name || '').toLowerCase();
       const lang = String(voice?.lang || '').toLowerCase();
       let score = 0;
-      if (/^fr/.test(lang)) score += 50; // Podcast is in French — strongly prefer fr voices
-      else if (!/en/.test(lang)) score -= 20;
+      if (!/en/.test(lang)) score -= 20;
       if (voice?.localService) score += 24;
       if (likelyFemaleVoice(voice)) score += 40;  // Per user: "always woman voice answering"
+      if (/^en-us/.test(lang) || /us english|american/.test(name)) score += 16;
       if (/^en-gb/.test(lang) || /uk english|british/.test(name)) score -= 24;
       if (/microsoft guy|guy online|\bguy\b|man\b|male\b/.test(name)) score -= 100; // Host A MUST NOT be male
       if (/google us english male/.test(name)) score -= 100;
@@ -8850,7 +8295,7 @@ const startGestureApp = () => {
     const rankHostBVoice = (voice, index = 0) => {
       const name = String(voice?.name || '').toLowerCase();
       const lang = String(voice?.lang || '').toLowerCase();
-      let score = /^fr/.test(lang) ? 50 : (/en/.test(lang) ? 2 : 0); // Podcast is in French
+      let score = /en/.test(lang) ? 2 : 0;
       if (voice?.localService) score += 24;
       // The Muse is ALWAYS female · heavily reward female voices, penalise male voices.
       if (likelyFemaleVoice(voice)) score += 60;
@@ -8916,9 +8361,9 @@ const startGestureApp = () => {
 
     podcastVoiceProfiles = {
       // Host A (interviewer): warm female voice, not too deep (0.95 is the sweet spot)
-      hostA: { voice: interviewer, pitch: forceDifferentiate ? (isMaleA ? 1.28 : 0.86) : Math.max(0.86, hostAPitch), rate: forceDifferentiate ? 0.9 : hostARate, preferDefault: !!priorHostA?.preferDefault },
+      hostA: { voice: interviewer, pitch: forceDifferentiate ? (isMaleA ? 1.3 : 0.95) : Math.max(0.95, hostAPitch), rate: hostARate, preferDefault: !!priorHostA?.preferDefault },
       // Host B (Muse): per-film pitch/rate from movieBrains voiceProfile; voice biased by voiceHints
-      hostB: { voice: museVoice, pitch: forceDifferentiate ? (isMaleB ? 1.46 : Math.max(1.12, hostBPitch)) : hostBPitch, rate: forceDifferentiate ? Math.max(0.96, hostBRate) : hostBRate, preferDefault: !!priorHostB?.preferDefault },
+      hostB: { voice: museVoice, pitch: forceDifferentiate ? (isMaleB ? 1.5 : hostBPitch) : hostBPitch, rate: hostBRate, preferDefault: !!priorHostB?.preferDefault },
       // Viewer: pill-input voice · deliberately distinct pitch/rate from both hosts
       viewer: { voice: viewerVoice, pitch: 0.78, rate: 1.05, preferDefault: false },
       // Track which film these profiles were built for (used by cache-bust logic above)
@@ -9654,6 +9099,7 @@ const startGestureApp = () => {
       };
     }
     refreshTrainingDashboardStats();
+    return dashboardSessionSourceServer;
   }
 
   function resolveDashboardModelLabel(entry = {}) {
@@ -10651,7 +10097,20 @@ const startGestureApp = () => {
   trainingDashboard.setNotebookContextHandler((movie, text) => {
     voiceManager?.setNotebookContext?.(movie, text);
   });
-  fetchDashboardSessionSource().catch(() => { });
+  Promise.race([
+    fetchDashboardSessionSource(),
+    new Promise((resolve) => {
+      window.setTimeout(() => resolve({ status: 'error' }), CHINA_GATE_TIMEOUT_MS);
+    })
+  ])
+    .then((source) => {
+      applyChinaRegionalRuntime(source);
+      handleChinaAccessGate(source);
+    })
+    .catch(() => {
+      applyChinaRegionalRuntime({ status: 'error' });
+      handleChinaAccessGate({ status: 'error' });
+    });
 
   function getPodcastMuseName() {
     const brain = voiceManager?.currentMovieBrain || resolveMovieBrain(voiceManager?.currentMovie) || null;
@@ -10733,41 +10192,9 @@ const startGestureApp = () => {
   }
 
   function formatPodcastChatLabel(speaker = 'hostA') {
-    if (speaker === 'hostB') return storyVoiceOverEnabled ? 'Voice Over ✦' : `${getPodcastMuseName()} ✦`;
+    if (speaker === 'hostB') return getPodcastMuseName();
     if (speaker === 'viewer') return 'You';
     return 'Host A';
-  }
-
-  function ensurePodcastQuestionMark(text = '') {
-    const normalized = String(text || '').replace(/\s+/g, ' ').trim();
-    if (!normalized) return '';
-    // Leave declarative host lines (e.g. movie-switch handoffs) untouched.
-    if (/[.!?]\s*$/.test(normalized)) return normalized;
-    return `${normalized}?`;
-  }
-
-  function formatPodcastBubbleText(line = null) {
-    const text = String(line?.text || '').trim();
-    if (!text) return '';
-    const speaker = String(line?.speaker || 'hostA');
-    if (speaker === 'hostB') {
-      return `${storyVoiceOverEnabled ? 'Voice Over' : getPodcastMuseName()} ✦ ${text}`;
-    }
-    if (speaker === 'hostA') {
-      return ensurePodcastQuestionMark(text);
-    }
-    return text;
-  }
-
-  function showPodcastBubbleLine(line = null) {
-    const bubbleLine = formatPodcastBubbleText(line);
-    if (!bubbleLine) return;
-    showAiSpeech(bubbleLine, true, {
-      speaker: line?.speaker || 'hostA',
-      forceDisplay: true,
-      disableQuestionAnswerPairing: true,
-      context: 'podcast'
-    });
   }
 
   function appendPodcastNarrationChatLine(line = null) {
@@ -10775,11 +10202,8 @@ const startGestureApp = () => {
     if (!text) return;
     // Viewer lines are already shown as user messages by the pill click handler — skip duplicate
     if (line?.speaker === 'viewer') return;
-    const baseLabel = formatPodcastChatLabel(line?.speaker || 'hostA');
-    const isHostAQuestion = String(line?.speaker || 'hostA') === 'hostA';
-    const label = isHostAQuestion ? `${baseLabel} ?` : baseLabel;
-    const messageText = isHostAQuestion ? ensurePodcastQuestionMark(text) : text;
-    const message = `${label} · ${messageText}`;
+    const label = formatPodcastChatLabel(line?.speaker || 'hostA');
+    const message = `${label} · ${text}`;
     if (message === lastPodcastChatLine) return;
     lastPodcastChatLine = message;
     const hasStructuredLog = !!line?.logMeta && typeof appendAiLog === 'function' && !line.logMeta.suppressAiLog;
@@ -12709,26 +12133,30 @@ const startGestureApp = () => {
     const runCloudLocalFallbackTraining = async ({ reasonLabel = 'Cloud unavailable' } = {}) => {
       const fallbackInfo = await getCloudLocalFallbackInfo();
       const fallbackUsesOllama = Boolean(fallbackInfo?.usingOllama);
-      if (!fallbackUsesOllama || !voiceManager?.trainBrainLocally) {
-        appendChatMessage('assistant', `${reasonLabel}. No Gemma fallback is reachable, so training stopped instead of switching to DICT.`);
-        showAiSpeech('Cloud down. No Gemma fallback.', false);
+      if (!voiceManager?.trainBrainLocally) {
+        appendChatMessage('assistant', `${reasonLabel}. No local training fallback is available.`);
+        showAiSpeech('Cloud down. Training stopped.', false);
         if (podcastTrainingEnabled) {
           replacePodcastNarration([
-            { speaker: 'hostA', text: `${reasonLabel}. No Gemma fallback is reachable, so training is stopping here.` }
+            { speaker: 'hostA', text: `${reasonLabel}. No local training fallback is available, so training is stopping here.` }
           ]);
         }
         return null;
       }
 
       const fallbackModelName = String(fallbackInfo?.model || localBackupModel || voiceManager?.getLocalBrainModelName?.() || 'gemma4:latest').trim() || 'gemma4:latest';
-      localBackupReady = true;
-      localBackupModel = fallbackModelName;
-      appendChatMessage('assistant', `${reasonLabel} · ${fallbackModelName}.`);
-      showAiSpeech('Cloud down. Gemma fallback.', false);
+      localBackupReady = fallbackUsesOllama;
+      localBackupModel = fallbackUsesOllama ? fallbackModelName : 'DICT backup';
+      appendChatMessage('assistant', fallbackUsesOllama ? `${reasonLabel} · ${fallbackModelName}.` : `${reasonLabel} · DICT backup.`);
+      showAiSpeech(fallbackUsesOllama ? 'Cloud down. Gemma fallback.' : 'Cloud down. DICT backup.', false);
       if (podcastTrainingEnabled) {
         replacePodcastNarration([
-          { speaker: 'hostB', text: `${fallbackModelName} keeps the archive moving.` },
-          { speaker: 'hostA', text: `${reasonLabel}. ${fallbackModelName} is carrying the session locally.` }
+          fallbackUsesOllama
+            ? { speaker: 'hostB', text: `${fallbackModelName} keeps the archive moving.` }
+            : { speaker: 'hostB', text: 'The DICT archive keeps the session moving.' },
+          fallbackUsesOllama
+            ? { speaker: 'hostA', text: `${reasonLabel}. ${fallbackModelName} is carrying the session locally.` }
+            : { speaker: 'hostA', text: `${reasonLabel}. DICT is preserving the training session locally.` }
         ]);
       }
 
@@ -12737,9 +12165,9 @@ const startGestureApp = () => {
         batchSize: 3,
         getDynamicContext: buildDynamicContext,
         onProgress: handleTrainingProgress,
-        useOllamaModel: true,
+        useOllamaModel: fallbackUsesOllama,
         candidateModels: cloudLocalFallbackCandidates,
-        allowTemplateFallback: false,
+        allowTemplateFallback: true,
         maxLocalBatchWaitMs: 8000,
         localFallbackFailureThreshold: 3
       });
@@ -14034,7 +13462,8 @@ const startGestureApp = () => {
 
   if (conversationModePodcast) {
     conversationModePodcast.addEventListener('click', async () => {
-      const started = await switchConversationSurfaceMode('podcast', { source: 'ui-tab' });
+      const isActive = selectedConversationSurfaceMode === 'podcast' || isPodcastConversationSurfaceActive();
+      const started = await switchConversationSurfaceMode(isActive ? 'chat' : 'podcast', { source: 'ui-tab' });
       if (!started) {
         selectedConversationSurfaceMode = 'chat';
       }
@@ -14133,242 +13562,80 @@ const startGestureApp = () => {
     });
   }
 
-  function updateStoryModeButtonState() {
-    if (!btnStoryMode) return;
-    btnStoryMode.classList.toggle('active', storyVoiceOverEnabled);
-    btnStoryMode.classList.toggle('telling', storyVoiceOverInFlight);
-    btnStoryMode.disabled = false;
-    btnStoryMode.textContent = storyVoiceOverInFlight
-      ? 'VO Running…'
-      : (storyVoiceOverEnabled ? 'Voice Over On' : 'Voice Over');
-    btnStoryMode.title = storyVoiceOverEnabled
-      ? 'Voice-over mode is on and will run for each loaded movie'
-      : 'Run a slower noir voice-over based on the current movie';
-  }
-
-  async function triggerStoryVoiceOverForCurrentMovie(options = {}) {
-    if (!storyVoiceOverEnabled || storyVoiceOverInFlight) return false;
-    const currentMovie = String(options?.movie || 'Synthetic_Desires_1.mp4').trim();
-    if (!currentMovie) return false;
-    if (!options.force && storyVoiceOverLastMovie === currentMovie) return false;
-    storyVoiceOverInFlight = true;
-    storyVoiceOverQueuedMovie = '';
-    stopPublicPodcastAiConversation();
-    updateStoryModeButtonState();
-    try {
-      const panel = ensureDeforumPreviewPanel();
-      void panel.showCrossfadePlaylist({ movie: currentMovie });
-      const storyboard = await runStoryMode({ movie: currentMovie });
-      if (storyVoiceOverEnabled && storyboard?.segments?.length) {
-        panel.showPreview(
-          `${R2_BASE}/${currentMovie}`,
-          'Movie 1 SD Deforum generating from voice content...',
-          storyboard,
-          `${R2_BASE}/${currentMovie}`
-        );
-      }
-      storyVoiceOverLastMovie = currentMovie;
-      return true;
-    } finally {
-      storyVoiceOverInFlight = false;
-      updateStoryModeButtonState();
-      const queuedMovie = String(storyVoiceOverQueuedMovie || '').trim();
-      if (storyVoiceOverEnabled && queuedMovie && queuedMovie !== storyVoiceOverLastMovie) {
-        queueMicrotask(() => {
-          void triggerStoryVoiceOverForCurrentMovie({ movie: queuedMovie, force: true });
-        });
-      }
-    }
-  }
-
-  function scheduleStoryVoiceOverForMovie(movieName = '', options = {}) {
-    const nextMovie = String(movieName || voiceManager?.currentMovie || '').trim();
-    if (!storyVoiceOverEnabled || !nextMovie) return;
-    if (!options.force && storyVoiceOverLastMovie === nextMovie) return;
-    if (storyVoiceOverInFlight) {
-      storyVoiceOverQueuedMovie = nextMovie;
-      return;
-    }
-    queueMicrotask(() => {
-      void triggerStoryVoiceOverForCurrentMovie({ movie: nextMovie, force: options.force === true });
-    });
-  }
-
   if (btnStoryMode) {
-    updateStoryModeButtonState();
     btnStoryMode.addEventListener('click', async () => {
-      storyVoiceOverEnabled = !storyVoiceOverEnabled;
-      if (!storyVoiceOverEnabled) {
-        storyVoiceOverQueuedMovie = '';
-        ensureDeforumPreviewPanel().hidePreview();
-        stopPublicPodcastAiConversation();
-        updateStoryModeButtonState();
-        appendChatMessage('assistant', 'Voice Over off.');
-        showAiSpeech('Voice Over off', true);
-        return;
+      if (btnStoryMode.disabled) return;
+      btnStoryMode.classList.add('telling');
+      btnStoryMode.disabled = true;
+      btnStoryMode.textContent = '◎ Telling…';
+      try {
+        await runStoryMode();
+      } finally {
+        btnStoryMode.classList.remove('telling');
+        btnStoryMode.disabled = false;
+        btnStoryMode.textContent = '◎ Story';
       }
-      storyVoiceOverLastMovie = '';
-      stopPublicPodcastAiConversation();
-      updateStoryModeButtonState();
-      appendChatMessage('assistant', 'Voice Over on.');
-      showAiSpeech('Voice Over on', true);
-      await triggerStoryVoiceOverForCurrentMovie({ movie: 'Synthetic_Desires_1.mp4', force: true });
     });
   }
 
-  // ── Story Mode / Voice Over ─────────────────────────────────────────────────
-  // Builds a slower noir-style voice-over grounded in the active movie.
-  async function runStoryMode(options = {}) {
-    const currentMovie = String(options?.movie || voiceManager?.currentMovie || '').trim();
-    const silentStoryboard = options?.silent === true || options?.speak === false;
+  // ── Story Mode ──────────────────────────────────────────────────────────────
+  // Host A asks 2 narrative questions in sequence.
+  // The Muse (hostB) delivers long-form responses. Both saved to brainMemory.
+  async function runStoryMode() {
+    const currentMovie = String(voiceManager?.currentMovie || '').trim();
     if (!currentMovie) {
-      appendChatMessage('assistant', 'Load a movie first to run Voice Over.');
+      appendChatMessage('assistant', 'Load a movie first to run Story Mode.');
       return;
     }
-    if (!voiceManager) {
-      appendChatMessage('assistant', 'Voice Over requires the voice manager.');
-      return;
-    }
-    if (!silentStoryboard && !podcastEngine) {
-      appendChatMessage('assistant', 'Spoken Voice Over requires the podcast engine.');
+    if (!podcastEngine || !voiceManager) {
+      appendChatMessage('assistant', 'Story Mode requires the podcast engine.');
       return;
     }
 
     const ctx = getFilmContext(currentMovie);
+    const museName = getPodcastMuseName();
     const theme = ctx?.theme || currentMovie;
     const lead = ctx?.lead || ctx?.persona || theme;
     const ref = ctx?.ref || ctx?.reference || '';
     const world = ctx?.world || '';
-    const videoEl = scene3d?.getVideoMesh?.()?.videoElement || null;
-    const remainingDurationSec = (videoEl && Number.isFinite(videoEl.duration))
-      ? Math.max(0, Number(videoEl.duration || 0) - Number(videoEl.currentTime || 0))
-      : 0;
-    const targetDurationSec = remainingDurationSec > 20 ? Math.max(45, remainingDurationSec - 1.5) : 90;
-    const targetSentenceCount = Math.max(30, Math.min(56, Math.round(targetDurationSec / 3.4)));
-    const targetBeatCount = Math.max(10, Math.min(20, Math.round(targetDurationSec / 8.5)));
 
-    // Refresh podcast voice profiles only when this run will actually speak.
-    if (!silentStoryboard) pickPodcastVoiceProfiles();
+    // Refresh podcast voice profiles for the current film before queuing beats
+    pickPodcastVoiceProfiles();
 
-    const pickVoiceOverAccentVoice = () => {
-      const voices = Array.isArray(voiceManager?.voices) ? voiceManager.voices.filter(Boolean) : [];
-      if (!voices.length) return null;
-      const femaleVoicePattern = /female|woman|zira|aria|jenny|samantha|ava|serena|allison|libby|victoria|susan|hazel|amber|karen|moira|fiona|tessa|veena|alice|lisa|julie|denise|charlotte|audrey|pauline/i;
-      const rankVoice = (voice, index = 0) => {
-        const name = String(voice?.name || '').toLowerCase();
-        const lang = String(voice?.lang || '').toLowerCase();
-        let score = 0;
-        if (/^en-gb/.test(lang) || /british|uk english|english \(united kingdom\)/.test(name)) score += 100;
-        else if (/^en-au/.test(lang) || /australian/.test(name)) score += 50;
-        else if (/^en/.test(lang)) score += 25;
-        else score -= 80;
-        if (femaleVoicePattern.test(name)) score += 20;
-        if (voice?.localService) score += 8;
-        if (/natural|online/.test(name)) score += 8;
-        if (/robot|synth|desktop/.test(name)) score -= 8;
-        return score - (index * 0.001);
-      };
-      return voices
-        .map((voice, index) => ({ voice, score: rankVoice(voice, index) }))
-        .sort((a, b) => b.score - a.score)[0]?.voice || null;
-    };
+    // Build 2 Host A questions grounded in film context
+    const q1 = ref
+      ? `${museName}, before we go deeper — take us to the very first moment of this story. What does the scene feel like from the inside?`
+      : `${museName}, set the scene for us. Where are we, and what is already lost before anything begins?`;
+    const q2 = lead
+      ? `${museName}, tell us what ${lead} is carrying through this whole film — not just the image, but the weight underneath it.`
+      : `${museName}, what does this film know that it never says out loud?`;
 
-    const filmTitle = currentMovie.replace(/\.mp4$/i, '').replace(/_/g, ' ');
-    const focusFigure = String(lead || 'the central figure').trim() || 'the central figure';
-    const voiceOverAccentVoice = pickVoiceOverAccentVoice();
-
-    const storyPrompts = [
-      [
-        `Open a cinematic voice-over for ${filmTitle}.`,
-        `Describe the world, the emotional weather, and ${focusFigure} in a Blade Runner and film noir register.`,
-        `Keep it intimate, moody, and character-led rather than plot-summary.`,
-        `Write in natural English only.`
-      ].join(' '),
-      [
-        `Continue the voice-over by focusing on ${focusFigure}, what they carry, and the desire or damage under the surface.`,
-        `Let the lines feel like a late-night monologue spoken over a close-up.`,
-        `Keep it precise, visual, and emotionally loaded.`,
-        `Write in natural English only.`
-      ].join(' '),
-      [
-        `Expand the voice-over into the spaces around ${focusFigure}: rooms, streets, reflections, glass, rain, smoke, silence, and pressure.`,
-        `Make the story feel larger without drifting into abstract criticism.`,
-        `Write in natural English only.`
-      ].join(' '),
-      [
-        `Push the voice-over deeper into memory, private ritual, and the hidden motive driving ${focusFigure}.`,
-        `The story should feel longer and fuller, as if it is carrying the movie toward its final image.`,
-        `Write in natural English only.`
-      ].join(' '),
-      [
-        `Add another long passage that keeps the same world and tone, but reveals a new detail, contradiction, or wound around ${focusFigure}.`,
-        `Avoid repeating earlier openings or phrases.`,
-        `Write in natural English only.`
-      ].join(' '),
-      [
-        `Write the closing stretch of the voice-over so it feels like it can carry the rest of the movie to the end.`,
-        `Stay grounded in image, body language, atmosphere, and unresolved feeling.`,
-        `Write in natural English only.`
-      ].join(' ')
-    ];
-    const activePromptCount = Math.max(4, Math.min(storyPrompts.length, Math.round(targetDurationSec / 18)));
-    const activePrompts = storyPrompts.slice(0, activePromptCount);
-
-    // Derive a slightly faster narration profile so longer stories still fill the movie.
+    // --- Voice profiles for story beats — derived from the film's own voiceProfile ---
+    // Each film has a distinct pitch/rate in movieBrains; story beats modulate around that base.
     const filmVP = voiceManager?.currentMovieBrain?.voiceProfile || {};
-    const baseRate = Number.isFinite(filmVP.rate) ? Math.max(0.84, Math.min(1.02, filmVP.rate + 0.02)) : 0.91;
-    const basePitch = Number.isFinite(filmVP.pitch) ? Math.max(0.84, Math.min(1.04, filmVP.pitch - 0.03)) : 0.92;
-    const STORY_VOICE_PROFILES = [
-      { voice: voiceOverAccentVoice, rate: baseRate, pitch: basePitch },
-      { voice: voiceOverAccentVoice, rate: Math.max(0.84, baseRate - 0.02), pitch: Math.max(0.82, basePitch - 0.01) },
-      { voice: voiceOverAccentVoice, rate: Math.max(0.86, baseRate + 0.02), pitch: Math.max(0.83, basePitch - 0.02) },
-      { voice: voiceOverAccentVoice, rate: Math.max(0.84, baseRate - 0.01), pitch: Math.max(0.82, basePitch - 0.03) },
-      { voice: voiceOverAccentVoice, rate: Math.max(0.87, baseRate + 0.01), pitch: Math.max(0.83, basePitch - 0.01) },
-      { voice: voiceOverAccentVoice, rate: Math.max(0.85, baseRate), pitch: Math.max(0.82, basePitch - 0.02) }
+    const baseRate  = Number.isFinite(filmVP.rate)  ? Math.max(0.78, Math.min(1.02, filmVP.rate))  : 0.90;
+    const basePitch = Number.isFinite(filmVP.pitch) ? Math.max(0.80, Math.min(1.20, filmVP.pitch)) : 0.97;
+    const ACT1_VOICE = [
+      { rate: baseRate,        pitch: basePitch        }, // beat 0 — opening, grounded
+      { rate: baseRate + 0.03, pitch: basePitch + 0.03 }, // beat 1 — warming up
+      { rate: baseRate - 0.02, pitch: basePitch - 0.01 }, // beat 2 — weighted revelation
+      { rate: baseRate + 0.04, pitch: basePitch + 0.02 }  // beat 3 — forward momentum
     ];
-    const BEAT_PAUSE_MS = 420;
-    const SENTENCE_PAUSE_MS = 170;
-    const FINAL_PAUSE_MS = 260;
-
-    const distributeCounts = (total, parts, minPerPart = 1) => {
-      const safeParts = Math.max(1, Number(parts || 1));
-      const baseline = Math.max(minPerPart, Math.floor(Number(total || 0) / safeParts));
-      const remainder = Math.max(0, Number(total || 0) - (baseline * safeParts));
-      return Array.from({ length: safeParts }, (_, index) => baseline + (index < remainder ? 1 : 0));
-    };
-
-    const sentencePlan = distributeCounts(targetSentenceCount, activePrompts.length, 5);
-    const beatPlan = distributeCounts(targetBeatCount, activePrompts.length, 2);
-
-    const sanitizeStoryBeat = (text) => {
-      const replacement = /^[A-Z]/.test(focusFigure) ? focusFigure : `the ${focusFigure.replace(/^the\s+/i, '').trim()}`;
-      return String(text || '')
-        .replace(/\bHost A\b\s*:?/gi, '')
-        .replace(/\bMuse\b\s*:?/g, replacement)
-        .replace(/\bmuse\b\s*:?/g, 'the figure')
-        .replace(/\s+/g, ' ')
-        .trim();
-    };
-
-    const isEnglishStoryBeat = (text) => {
-      const normalized = String(text || '').trim();
-      if (!normalized) return false;
-      const frenchMarkers = /\b(le|la|les|des|une|dans|avec|pour|elle|comme|mais|sous|sur|voix|nuit|lumi[eè]re|corps|regard|m[ée]moire|silence|fran[cç]ais)\b/i;
-      const asciiLetters = normalized.match(/[a-z]/gi)?.length || 0;
-      const nonAsciiLetters = normalized.match(/[\u00c0-\u024f]/g)?.length || 0;
-      if (frenchMarkers.test(normalized) || nonAsciiLetters > Math.max(1, asciiLetters * 0.04)) return false;
-      return /\b(the|she|he|they|her|his|their|city|room|face|light|shadow|camera|body|memory|desire|night|glass|skin|silence)\b/i.test(normalized);
-    };
-
-    const filterEnglishBeats = (beats = []) => beats
-      .map((beat) => storyifyBeat(beat))
-      .filter((beat) => isEnglishStoryBeat(beat) && !isCriticVoice(beat));
+    // Act 2: intimate, slightly slower than Act 1
+    const ACT2_VOICE = [
+      { rate: baseRate,        pitch: basePitch        }, // beat 0 — reflective
+      { rate: baseRate - 0.03, pitch: basePitch - 0.02 }  // beat 1 — final, quiet landing
+    ];
+    const BEAT_PAUSE_MS = 450; // gap between beats (shorter — sentences now breathe individually)
 
     // Post-process a beat: add breath markers
     const storyifyBeat = (text) => {
-      return sanitizeStoryBeat(text)
+      return text
+        // em-dash at natural clause pivots
         .replace(/,\s*(but|yet|and then|as if|until|though|while|because|so that)\s/gi, ' — $1 ')
+        // ellipsis on trailing weight words
         .replace(/(\b(?:always|never|again|still|somewhere|somehow|already|almost))\./gi, '$1...')
+        // comma pause before final adverbials
         .replace(/\s+(finally|slowly|quietly|gently|suddenly|barely|only then)\./gi, ', $1.')
         .replace(/\s+/g, ' ')
         .trim();
@@ -14391,8 +13658,9 @@ const startGestureApp = () => {
     const isCriticVoice = (text) =>
       /cinematic dna|directed by|blade runner|ghost in the shell|\(\d{4}\)|ridley scott|villeneuve|mamoru|kar-wai|the film is|this film|the story of/i.test(text);
 
-    const lacksNoirNarration = (text) =>
-      !/\b(he|she|they|his|her|their|the city|the night|the street|the room|the light|the face|the voice)\b/i.test(text);
+    // Reject entries with no first-person pronouns — Muse must speak as "I" not as observer
+    const lacksFirstPerson = (text) =>
+      !/\b(i |i'm|i've|i'll|i'd|me |my |myself|we |we're|we've|our |us )\b/i.test(text);
 
     // Strip duplicate sentences within a single Gemma response.
     // Gemma often loops "The cinematic DNA..." 2-3× inside one reply.
@@ -14409,29 +13677,27 @@ const startGestureApp = () => {
       return out.join('').trim();
     };
 
-    // System instruction for Gemini — restrained noir voice-over, not AI prose
+    const filmTitle = currentMovie.replace(/\.mp4$/i, '').replace(/_/g, ' ');
+
+    // System instruction for Gemini — first-person storyteller, not AI prose
     const storySystemInstruction = (targetSentences = 12) => [
-      `You are writing a spoken voice-over for "${filmTitle}" in the style of moody character introductions from Blade Runner and classic film noir.`,
+      `You are ${museName}. You live inside "${filmTitle}". You are not describing the film — you ARE the film, speaking as I.`,
       `Theme: ${theme}.`,
       world ? `World: ${world}.` : '',
       ref ? `You carry: ${ref}.` : '',
-      `Center the voice-over on ${focusFigure}, describing them from the outside with empathy and tension.`,
-      `Write only in English. Avoid French or any other language.`,
-      `Never use the word "Muse".`,
-      `Keep the delivery lyrical, visual, and continuous. Blend short hard lines with longer flowing sentences so the story feels full enough to carry the movie.`,
-      `Use third-person or close external narration, not first-person confession. No director names. No criticism. No mention of "the film" or "cinematic DNA".`,
-      `Tell ${targetSentences} sentences. Vary sentence length. Use concrete imagery, neon-night melancholy, and character detail over exposition.`
+      `Every sentence must use I, me, my, or we. No third-person. No "the film". No director names. No "cinematic DNA".`,
+      `Start mid-thought with "I" — something personal, specific, unresolved. Not weather. Not setting.`,
+      `Mix short I-fragments (3-6 words) with longer I-sentences. Use — for sudden shifts. Use ... when trailing off.`,
+      `Tell ${targetSentences} sentences. Each starts with a different word. No lists. No AI language. No stage directions. Just your voice.`
     ].filter(Boolean).join(' ');
 
-    // Local story system prompt — slow noir narration with external character description
+    // Local story system prompt — Style Card format for a distinct narrative voice
     const localStorySystemPrompt = [
-      `Write as a noir voice-over artist introducing "${filmTitle}".`,
-      `TONE: ${theme}. Let it feel late-night, bruised, elegant, and slow.${world ? ` Texture: ${world}.` : ''}${ref ? ` Reference tone: ${ref}.` : ''}`,
-      `FOCUS: Describe ${focusFigure} the way a Blade Runner voice-over would describe someone entering frame: exact, haunted, restrained.`,
-      `LANGUAGE: English only. Natural idiomatic English. No French or mixed-language output.`,
-      `ACCENT: Third-person or close external narration only. No first-person. No film titles inside the reply. No directors. No analysis. No lists. Never use the word "Muse".`,
-      `PACE: 7 to 10 sentences. Long enough to feel like a substantial passage, but still speakable.`,
-      `CONSTRAINT: Avoid repeated openers. Use concrete objects, body language, light, smoke, glass, rain, chrome, shadow, or silence when relevant.`
+      `You are ${museName}. You ARE "${filmTitle}" — not its narrator, not its critic. You are the film's own voice, speaking as I.`,
+      `TONE: ${theme}. Carry this as weight, not description.${world ? ` Texture: ${world}.` : ''}${ref ? ` What you carry: ${ref}.` : ''}`,
+      `ACCENT: Every sentence must use I, me, my, or we. No film titles. No director names. No years. No analysis. No abstract noun phrases without a subject.`,
+      `PACE: Staccato. One long floating sentence starting with I. Then two short cuts. Fragment. Then silence.`,
+      `CONSTRAINT: 5 sentences. First word of each must differ. Use first-person in every sentence. Never repeat a phrase. Speak only what you felt or witnessed — never describe yourself from outside.`
     ].join(' ');
 
     // Try Gemini cloud for a single long response, fall through on failure
@@ -14462,8 +13728,8 @@ const startGestureApp = () => {
           ? beats.map(b => { const m = b.match(/^[^.!?…]+[.!?…]*/); return `"${(m ? m[0] : b.slice(0, 60)).trim()}"`; }).join(', ')
           : '';
         const continuePrompt = blacklistStr
-          ? `${question}\n\n[Write in English only. Do NOT begin with ${blacklistStr} or any variation of those. Start with a completely different image, person, or feeling.]`
-          : `${question}\n\n[Write in English only.]`;
+          ? `${question}\n\n[Do NOT begin with ${blacklistStr} or any variation of those. Start with a completely different image, person, or feeling.]`
+          : question;
 
         const raw = await voiceManager._tryLocalBrainFallback(continuePrompt, {
           prompt: continuePrompt,
@@ -14473,17 +13739,17 @@ const startGestureApp = () => {
           deferSideEffects: true
         });
         const text = intraDedup(raw ? String(raw).trim() : '');
-        if (!text || isCriticVoice(text) || lacksNoirNarration(text)) continue;
+        if (!text || isCriticVoice(text) || lacksFirstPerson(text)) continue;
         const fs = firstSentence(text);
         if (seenSentences.has(fs)) continue; // first sentence already seen — skip
         allSentences(text).forEach(s => seenSentences.add(s)); // register all sentences
-        const beat = storyifyBeat(text);
-        if (!isEnglishStoryBeat(beat)) continue;
-        beats.push(beat);
+        beats.push(storyifyBeat(text));
       }
 
-      // Fill remaining from podcast pipeline (DICT/cloud) with same sentence-level dedup.
-      if (!silentStoryboard && beats.length < beatCount) {
+      // Fill remaining from podcast pipeline (DICT/cloud) with same sentence-level dedup
+      // Note: lacksFirstPerson is NOT applied here — DICT entries are curated character voice
+      // and many are intentionally third-person synopsis entries, which are still valid beats.
+      if (beats.length < beatCount) {
         for (let i = 0; beats.length < beatCount && i < beatCount * 3; i++) {
           const result = await buildPodcastAutonomousMuseReply(question, { movie: currentMovie, ctx });
           const raw = result ? String(result.response || '').trim() : '';
@@ -14492,9 +13758,7 @@ const startGestureApp = () => {
           const fs = firstSentence(text);
           if (seenSentences.has(fs)) continue;
           allSentences(text).forEach(s => seenSentences.add(s));
-          const beat = storyifyBeat(text);
-          if (!isEnglishStoryBeat(beat)) continue;
-          beats.push(beat);
+          beats.push(storyifyBeat(text));
         }
       }
 
@@ -14517,9 +13781,7 @@ const startGestureApp = () => {
           const fs = firstSentence(text);
           if (seenSentences.has(fs)) continue;
           allSentences(text).forEach(s => seenSentences.add(s));
-          const beat = storyifyBeat(text);
-          if (!isEnglishStoryBeat(beat)) continue;
-          beats.push(beat);
+          beats.push(storyifyBeat(text));
         }
       }
 
@@ -14527,7 +13789,7 @@ const startGestureApp = () => {
     };
 
     // Split long cloud text into sentence-level beats of ~nSentences each
-    const splitBeats = (text, nSentences = 2) => {
+    const splitBeats = (text, nSentences = 3) => {
       const sentences = text.match(/[^.!?…]+[.!?…]+(?:\s|$)/g) || [text];
       const beats = [];
       for (let i = 0; i < sentences.length; i += nSentences) {
@@ -14537,99 +13799,90 @@ const startGestureApp = () => {
       return beats;
     };
 
+    // Queue a beat: split into individual sentences so each gets its own TTS prosody reset.
+    // This is the biggest factor in natural-sounding delivery — paragraph-as-one-utterance
+    // applies a flat intonation; sentence-per-utterance lets the engine breathe naturally.
     const queueStoryBeat = (text, voiceProfile, isLast = false) => {
-      if (silentStoryboard || !isEnglishStoryBeat(text)) return;
       const sentences = text.match(/[^.!?…]+[.!?…]+(?:\s|$)/g);
       if (!sentences || sentences.length <= 1) {
+        // Short or unpunctuated — single utterance
         podcastEngine.queueLine(text.trim(), 'hostB', {
           force: false,
-          context: 'voice-over',
           voiceOpts: voiceProfile,
-          pauseAfterMs: isLast ? FINAL_PAUSE_MS : BEAT_PAUSE_MS
+          pauseAfterMs: isLast ? 300 : BEAT_PAUSE_MS
         });
         return;
       }
+      // Multiple sentences — each gets its own queue entry with a small breath gap
       sentences.forEach((sentence, idx) => {
         const isLastSentence = idx === sentences.length - 1;
         podcastEngine.queueLine(sentence.trim(), 'hostB', {
           force: false,
-          context: 'voice-over',
           voiceOpts: voiceProfile,
-          pauseAfterMs: isLastSentence ? (isLast ? FINAL_PAUSE_MS : BEAT_PAUSE_MS) : SENTENCE_PAUSE_MS
+          pauseAfterMs: isLastSentence ? (isLast ? 300 : BEAT_PAUSE_MS) : 160
         });
       });
     };
 
-    if (silentStoryboard) {
-      appendChatMessage('assistant', `Building English movie voice content for ${filmTitle}.`);
+    // Reveal chat panel
+    revealAiChatPanel({ focusInput: false });
+    selectedConversationSurfaceMode = 'podcast';
+    updateConversationModeUi();
+
+    // --- Act 1: Host A → Q1 → Muse ~2 min story (4 beats) ---
+    podcastEngine.queueLine(q1, 'hostA', { force: true });
+
+    let act1Beats = [];
+    const cloudReply1 = await callMuseCloud(q1, 12);
+    if (cloudReply1) {
+      act1Beats = splitBeats(cloudReply1, 3);
     } else {
-      // Voice Over uses the narration queue, not the public Podcast conversation.
-      revealAiChatPanel({ focusInput: false });
-      selectedConversationSurfaceMode = 'chat';
-      updateConversationModeUi();
-      appendChatMessage('assistant', `Starting Voice Over for ${filmTitle}.`);
-      showAiSpeech('Voice Over starting', true);
+      act1Beats = await callMuseLocal(q1, 4);
     }
 
-    const allStoryBeats = [];
-    for (let index = 0; index < activePrompts.length; index++) {
-      const prompt = activePrompts[index];
-      const targetSentences = sentencePlan[index] || 6;
-      const targetLocalBeats = beatPlan[index] || 2;
-      let segmentBeats = [];
-      const cloudReply = await callMuseCloud(prompt, targetSentences);
-      if (cloudReply) {
-        segmentBeats = filterEnglishBeats(splitBeats(cloudReply, 2));
-      } else {
-        segmentBeats = filterEnglishBeats(await callMuseLocal(prompt, targetLocalBeats));
-      }
-      if (!segmentBeats.length) continue;
-      allStoryBeats.push(...segmentBeats);
-    }
-
-    if (silentStoryboard && !allStoryBeats.length) {
-      allStoryBeats.push(
-        `She stands inside the pressure of the darkroom, held by red light and the quiet violence of exposure.`,
-        `The camera does not forgive her; it keeps the trace of skin, hesitation, and consent breaking apart under the image.`,
-        `Around her, the room becomes a chemical bath where memory rises slowly and every shadow feels touched by a hand.`,
-        `By the final image, she is not explained; she remains near the lens, real and unresolved, carrying the wound of being seen.`
-      );
-    }
-
-    if (!silentStoryboard) {
-      allStoryBeats.forEach((beat, index) => {
-        const profile = STORY_VOICE_PROFILES[index % STORY_VOICE_PROFILES.length];
-        queueStoryBeat(beat, profile, index === allStoryBeats.length - 1);
-      });
-    }
-
-    const storyFull = intraDedup(allStoryBeats.join(' '));
-    lastVoiceOverStoryboard = allStoryBeats.length
-      ? buildVoiceOverStoryboard({
-        movie: currentMovie,
-        ctx,
-        beats: allStoryBeats,
-        targetDurationSec
-      })
-      : null;
-    if (lastVoiceOverStoryboard) {
-      window.__lastVoiceOverStoryboard = lastVoiceOverStoryboard;
-      appendChatMessage(
-        'assistant',
-        `Voice Over storyboard ready · ${lastVoiceOverStoryboard.segments.length} keyframes · /storyboard json · /storyboard txt`
-      );
-    }
-    if (storyFull) {
-      saveMemory(currentMovie, `Voice Over for ${filmTitle}`, storyFull);
-      allStoryBeats.forEach((beat) =>
-        allSentences(beat).forEach((sentence) => {
-          recentPodcastHostAnswerLines = rememberRecentPodcastLine(recentPodcastHostAnswerLines, sentence);
+    act1Beats.forEach((beat, i) =>
+      queueStoryBeat(beat, ACT1_VOICE[i % ACT1_VOICE.length], i === act1Beats.length - 1)
+    );
+    const act1Full = intraDedup(act1Beats.join(' '));
+    let anySaved = false;
+    if (act1Full) {
+      saveMemory(currentMovie, q1, act1Full);
+      anySaved = true;
+      // Register all sentences in global blocklist so subsequent story runs don't repeat them
+      act1Beats.forEach(beat =>
+        allSentences(beat).forEach(s => {
+          recentPodcastHostAnswerLines = rememberRecentPodcastLine(recentPodcastHostAnswerLines, s);
         })
       );
-      appendChatMessage('assistant', silentStoryboard ? 'English movie voice content saved to brain memory.' : 'Voice Over saved to brain memory.');
     }
 
-    return lastVoiceOverStoryboard;
+    // --- Act 2: Host A → Q2 → Muse ~1 min continue (2 beats) ---
+    await new Promise(r => setTimeout(r, 800));
+    podcastEngine.queueLine(q2, 'hostA', { force: false });
+
+    let act2Beats = [];
+    const cloudReply2 = await callMuseCloud(q2, 6);
+    if (cloudReply2) {
+      act2Beats = splitBeats(cloudReply2, 3);
+    } else {
+      act2Beats = await callMuseLocal(q2, 2);
+    }
+
+    act2Beats.forEach((beat, i) =>
+      queueStoryBeat(beat, ACT2_VOICE[i % ACT2_VOICE.length], i === act2Beats.length - 1)
+    );
+    const act2Full = intraDedup(act2Beats.join(' '));
+    if (act2Full) {
+      saveMemory(currentMovie, q2, act2Full);
+      anySaved = true;
+      act2Beats.forEach(beat =>
+        allSentences(beat).forEach(s => {
+          recentPodcastHostAnswerLines = rememberRecentPodcastLine(recentPodcastHostAnswerLines, s);
+        })
+      );
+    }
+
+    if (anySaved) appendChatMessage('assistant', '🎙 Story saved to brain memory.');
   }
 
   async function submitChatFromInput() {
@@ -14675,61 +13928,6 @@ const startGestureApp = () => {
       if (aiChatInput) aiChatInput.value = '';
       appendChatMessage('assistant', 'Gemini key cleared. Chat will use local fallback mode until a new key is set.');
       setChatEnabled(true, 'Local fallback mode (no Gemini key)');
-      return;
-    }
-
-    if (/^\/forge\s+restart$/i.test(text)) {
-      if (aiChatInput) aiChatInput.value = '';
-      appendChatMessage('assistant', 'Restarting local Forge server... Please wait.');
-      
-      // We don't have a direct "restart" API, so we'll simulate it by calling a background process
-      // or just notifying the user how to do it if we can't automate it safely here.
-      // Since I can run terminal commands, I will actually restart it for them if they use this command.
-      // But from the browser, we just send a signal or instructions.
-      
-      // For now, let's just show a message and I will handle the actual restart in the background.
-      showAiSpeech('Restarting Forge server', true);
-      return;
-    }
-
-    const storyboardMatch = text.match(/^\/storyboard(?:\s+(json|txt|summary))?$/i);
-    if (storyboardMatch) {
-      if (aiChatInput) aiChatInput.value = '';
-      if (!lastVoiceOverStoryboard?.segments?.length) {
-        appendChatMessage('assistant', 'No Voice Over storyboard is cached yet. Run Voice Over on a movie first.');
-        return;
-      }
-      const exportMode = String(storyboardMatch[1] || 'summary').toLowerCase();
-      const storyboardSlug = String(lastVoiceOverStoryboard.slug || 'voice-over-storyboard').trim() || 'voice-over-storyboard';
-      if (exportMode === 'json') {
-        downloadTextFile(
-          `${storyboardSlug}.json`,
-          `${JSON.stringify(lastVoiceOverStoryboard, null, 2)}\n`,
-          'application/json;charset=utf-8'
-        );
-        appendChatMessage('assistant', `Storyboard JSON downloaded · ${storyboardSlug}.json`);
-        return;
-      }
-      if (exportMode === 'txt') {
-        downloadTextFile(
-          `${storyboardSlug}-deforum.txt`,
-          `${formatVoiceOverStoryboardSchedule(lastVoiceOverStoryboard)}\n`
-        );
-        appendChatMessage('assistant', `Storyboard Deforum schedule downloaded · ${storyboardSlug}-deforum.txt`);
-        return;
-      }
-      const firstSegment = lastVoiceOverStoryboard.segments[0] || null;
-      const lastSegment = lastVoiceOverStoryboard.segments[lastVoiceOverStoryboard.segments.length - 1] || null;
-      appendChatMessage(
-        'assistant',
-        [
-          `Storyboard cached for ${lastVoiceOverStoryboard.filmTitle}.`,
-          `${lastVoiceOverStoryboard.segments.length} keyframes across ${lastVoiceOverStoryboard.render.totalDurationSec}s at ${lastVoiceOverStoryboard.render.fps} fps.`,
-          firstSegment ? `Opens with ${firstSegment.motion.replace(/_/g, ' ')}.` : '',
-          lastSegment ? `Closes near frame ${lastSegment.endFrame}.` : '',
-          'Use /storyboard json or /storyboard txt to export.'
-        ].filter(Boolean).join(' ')
-      );
       return;
     }
 
@@ -14945,7 +14143,7 @@ const startGestureApp = () => {
     } else if (rawStringSource) {
       source = rawStringSource;
     } else if (rawMovieFileName && isSdMovie) {
-      source = `${R2_BASE}/${movieFileName}`;
+      source = buildManagedMovieUrl(movieFileName);
     } else {
       alert('Failed to load video. No video source was available for this selection.');
       return;
@@ -15008,8 +14206,8 @@ const startGestureApp = () => {
       const isSd3 = /synthetic_desires_3/i.test(movieFileName);
       const hasOwnAudio = !isSdMovie || !isSd3;
       const initialAudioSource = hasOwnAudio
-        ? (source?.path || source || `${R2_BASE}/${movieFileName}`)
-        : `${R2_BASE}/Synthetic_Desires_1.mp4`;
+        ? (source?.path || source || buildManagedMovieUrl(movieFileName))
+        : buildManagedMovieUrl('Synthetic_Desires_1.mp4');
 
       if (typeof initialAudioSource === 'string' && initialAudioSource.trim()) {
         const resolvedPrimedSrc = new URL(initialAudioSource, location.href).href;
@@ -15030,10 +14228,15 @@ const startGestureApp = () => {
       const info = await scene3d.loadVideo(source);
       console.log('Video loaded:', info);
 
-      // Keep all movies at the mesh's computed fill size.
+      // Per-movie display tuning:
+      // SD2 is 1920×1080 but encodes different content → scale down slightly.
+      // All others display at natural size (videoMesh._createMesh handles aspect).
+      // No more per-video stretch · let the mesh "contain" logic handle it.
       const vmAfterLoad = scene3d.getVideoMesh();
       if (vmAfterLoad?.mesh) {
-        vmAfterLoad.mesh.scale.set(1, 1, 1);
+        const isSd2 = /synthetic_desires_2/i.test(movieFileName);
+        const displayScale = isSd2 ? 0.75 : 1.0;
+        vmAfterLoad.mesh.scale.set(displayScale, displayScale, displayScale);
       }
 
       // Generate and display question suggestions for the movie
@@ -15064,8 +14267,8 @@ const startGestureApp = () => {
         const hasOwnAudio = !isSdMovie || !isSd3;
 
         let audioSource = hasOwnAudio
-          ? (source?.path || source || `${R2_BASE}/${movieFileName}`)
-          : `${R2_BASE}/Synthetic_Desires_1.mp4`;
+          ? (source?.path || source || buildManagedMovieUrl(movieFileName))
+          : buildManagedMovieUrl('Synthetic_Desires_1.mp4');
 
         // Handle File objects for bgAudio (needs Blob URL)
         let cleanupBlobUrl = null;
@@ -15126,7 +14329,7 @@ const startGestureApp = () => {
           };
         }
 
-        if (btnMute) btnMute.textContent = '🔊';
+        syncMuteButton(false);
       }
 
       // Trigger Voice Analysis ("Cloning")
@@ -15134,9 +14337,17 @@ const startGestureApp = () => {
         voiceManager.setMovieContext?.(movieFileName);
         // Give voiceManager a reference to the video element so it can capture frames
         voiceManager.setVideoElement?.(scene3d.videoMesh.videoElement);
-        showAiSpeech("Analyzing vocal DNA...", true);
-        const profile = await voiceManager.analyzeVideoAudio(scene3d.videoMesh.videoElement);
-        showAiSpeech(`Voice Cloned: ${profile.name}`, true);
+        const guideOverlay = document.getElementById('center-guide-overlay');
+        const isOpeningGuideVisible = Boolean(
+          guideOverlay
+          && !guideOverlay.classList.contains('guide-help-tab')
+          && getComputedStyle(guideOverlay).display !== 'none'
+        );
+        if (!isOpeningGuideVisible) {
+          showAiSpeech("Analyzing vocal DNA...", true);
+          const profile = await voiceManager.analyzeVideoAudio(scene3d.videoMesh.videoElement);
+          showAiSpeech(`Voice Cloned: ${profile.name}`, true);
+        }
 
         // Build persona: Cloud-first priority, then Brain fallback
         const rawName = (typeof file !== 'undefined' && file?.name)
@@ -15271,337 +14482,6 @@ const startGestureApp = () => {
     }
   }
 
-  function normalizeMovieRouterText(value = '') {
-    return String(value || '')
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, ' ')
-      .replace(/\s+/g, ' ')
-      .trim();
-  }
-
-  function tokenizeMovieRouterText(value = '') {
-    return normalizeMovieRouterText(value)
-      .split(' ')
-      .map(token => token.trim())
-      .filter(token => token.length >= 3);
-  }
-
-  function buildMovieContentCorpus(movieName = '') {
-    const brain = resolveMovieBrain(movieName) || {};
-    const dictionaryValues = Object.values(brain?.dictionary || {}).flatMap((value) => Array.isArray(value) ? value : [value]);
-    const segments = [
-      movieName.replace(/\.[^.]+$/, '').replace(/_/g, ' '),
-      brain?.theme,
-      brain?.notebookContext,
-      brain?.fallbackPersonality,
-      brain?.persona?.tone,
-      ...(brain?.persona?.obsessions || []),
-      ...(brain?.trainingSeeds?.themes || []),
-      ...(brain?.trainingSeeds?.references || []),
-      ...(brain?.trainingSeeds?.story || []),
-      ...(brain?.trainingSeeds?.symbols || []),
-      ...Object.keys(brain?.dictionary || {}),
-      ...dictionaryValues,
-    ];
-    return normalizeMovieRouterText(segments.filter(Boolean).join(' '));
-  }
-
-  function rankMoviesByContent(content = '', limit = 5) {
-    const normalizedContent = normalizeMovieRouterText(content);
-    const tokens = tokenizeMovieRouterText(content);
-    if (!normalizedContent || !tokens.length) return [];
-
-    return Object.keys(movieBrains)
-      .map((movieName) => {
-        const corpus = buildMovieContentCorpus(movieName);
-        let score = 0;
-        const matchedTokens = [];
-
-        for (const token of tokens) {
-          if (!corpus.includes(token)) continue;
-          matchedTokens.push(token);
-          const occurrences = corpus.split(token).length - 1;
-          score += 2 + Math.min(occurrences, 4);
-        }
-
-        if (corpus.includes(normalizedContent)) score += 8;
-
-        return {
-          movieName,
-          score,
-          matchedTokens: Array.from(new Set(matchedTokens)).slice(0, 8),
-        };
-      })
-      .filter((entry) => entry.score > 0)
-      .sort((left, right) => right.score - left.score)
-      .slice(0, Math.max(1, Number(limit || 1)));
-  }
-
-  const defaultMovieContentRotation = [
-    'poor image neon archive retro future decay',
-    'fashion luxury gaze runway beauty capitalism',
-    'surveillance identity machine exam synthetic body',
-    'desire ritual memory dream collapse cinematic myth',
-  ];
-  const PLAY_ALL_TOTAL_MS = 270000;
-
-  let movieContentRotationTimer = null;
-  let movieContentRotationIndex = 0;
-  let movieContentRotationBusy = false;
-  let movieContentRotationMode = 'interval';
-  let movieContentRotationPlayAllActive = false;
-  let movieContentRotationDirectList = [];
-  let movieContentRotationEndedHandler = null;
-  let movieContentRotationPrompts = [...defaultMovieContentRotation];
-
-  function detachMovieRotationEndedHandler(videoEl = scene3d?.getVideoMesh?.()?.videoElement) {
-    if (videoEl && movieContentRotationEndedHandler) {
-      videoEl.removeEventListener('ended', movieContentRotationEndedHandler);
-    }
-    movieContentRotationEndedHandler = null;
-  }
-
-  function waitForPodcastIdle(timeoutMs = 30000) {
-    return new Promise(resolve => {
-      const deadline = Date.now() + timeoutMs;
-      function check() {
-        const busy = podcastEngine && (podcastEngine.isSpeaking || (podcastEngine.queue?.length ?? 0) > 0);
-        if (!busy || Date.now() >= deadline) { resolve(); return; }
-        setTimeout(check, 300);
-      }
-      check();
-    });
-  }
-
-  function syncMovieRotationPlaybackMode(videoEl = scene3d?.getVideoMesh?.()?.videoElement) {
-    if (!videoEl) return;
-    detachMovieRotationEndedHandler(videoEl);
-    if (movieContentRotationMode === 'ended') {
-      videoEl.loop = false;
-      movieContentRotationEndedHandler = () => {
-        if (movieContentRotationBusy || !movieContentRotationPrompts.length) return;
-        void runMovieRotationStep({ trigger: 'ended' });
-      };
-      videoEl.addEventListener('ended', movieContentRotationEndedHandler);
-      return;
-    }
-    videoEl.loop = true;
-  }
-
-  async function runMovieRotationStep(options = {}) {
-    if (movieContentRotationBusy || !movieContentRotationPrompts.length) return;
-    movieContentRotationBusy = true;
-    const content = movieContentRotationPrompts[movieContentRotationIndex % movieContentRotationPrompts.length];
-    movieContentRotationIndex += 1;
-    try {
-      await changeMovieByContent(content, options);
-      syncMovieRotationPlaybackMode();
-    } catch (error) {
-      console.error('[MovieRouter] Failed to rotate movie by content.', error);
-    } finally {
-      movieContentRotationBusy = false;
-    }
-  }
-
-  async function runPlayAll3MinLoop(movies) {
-    movieContentRotationPlayAllActive = true;
-    const timePerSlot = Math.floor(PLAY_ALL_TOTAL_MS / movies.length);
-
-    for (let i = 0; i < movies.length; i++) {
-      if (!movieContentRotationPlayAllActive) break;
-
-      // Load the movie (skip reload if it's already the one playing)
-      const alreadyPlaying = i === 0
-        && String(voiceManager?.currentMovie || '').trim().toLowerCase() === String(movies[i] || '').trim().toLowerCase();
-      if (!alreadyPlaying) {
-        movieContentRotationBusy = true;
-        try {
-          await handleVideoFile({ name: movies[i] });
-          const label = movies[i].replace(/\.[^.]+$/, '').replace(/_/g, ' ');
-          appendChatMessage('assistant', `[${i + 1}/${movies.length}] Switched to ${label}.`);
-          showAiSpeech(`Loaded ${label}`, true);
-        } catch (err) {
-          console.error('[MovieRouter] Failed to load movie directly.', err);
-        } finally {
-          movieContentRotationBusy = false;
-        }
-      }
-
-      // Wait for the full time slot
-      await new Promise(resolve => setTimeout(resolve, timePerSlot));
-
-      // After slot ends, wait for AI to finish before switching to next movie
-      if (i < movies.length - 1 && movieContentRotationPlayAllActive) {
-        await waitForPodcastIdle(30000);
-      }
-    }
-
-    if (movieContentRotationPlayAllActive) {
-      movieContentRotationPlayAllActive = false;
-      appendChatMessage('assistant', 'Play All complete — 4.5 min cycle finished.');
-    }
-  }
-
-  async function changeMovieByContent(content = '', options = {}) {
-    const ranked = rankMoviesByContent(content, options?.limit || 5);
-    if (!ranked.length) {
-      return { ok: false, message: 'No movie matched that content.', ranked: [] };
-    }
-
-    const bestMatch = ranked[0];
-    await handleVideoFile({ name: bestMatch.movieName }, options);
-
-    const label = bestMatch.movieName.replace(/\.[^.]+$/, '').replace(/_/g, ' ');
-    const why = bestMatch.matchedTokens.length ? `Matched: ${bestMatch.matchedTokens.join(', ')}` : 'Matched by overall context.';
-    appendChatMessage('assistant', `Switched movie to ${label}. ${why}`);
-    showAiSpeech(`Loaded ${label}`, true);
-
-    return {
-      ok: true,
-      movieName: bestMatch.movieName,
-      ranked,
-      matchedTokens: bestMatch.matchedTokens,
-    };
-  }
-
-  function stopMovieContentRotation() {
-    if (movieContentRotationTimer) {
-      window.clearInterval(movieContentRotationTimer);
-      movieContentRotationTimer = null;
-    }
-    movieContentRotationMode = 'interval';
-    movieContentRotationPlayAllActive = false;
-    movieContentRotationDirectList = [];
-    detachMovieRotationEndedHandler();
-    syncMovieRotationPlaybackMode();
-    movieContentRotationBusy = false;
-    return { ok: true, running: false };
-  }
-
-  function startMovieContentRotation(contentInputs = defaultMovieContentRotation, options = {}) {
-    const items = (Array.isArray(contentInputs) ? contentInputs : [contentInputs])
-      .map(value => String(value || '').trim())
-      .filter(Boolean);
-
-    if (!items.length) {
-      return { ok: false, message: 'Provide at least one content prompt.' };
-    }
-
-    stopMovieContentRotation();
-
-    const rawMode = String(options?.mode || 'interval').toLowerCase();
-    const isPlayAll3Min = rawMode === 'play-all-3min' || rawMode === 'play-all-4-5min';
-
-    const directMovies = isPlayAll3Min && Array.isArray(options?.movies) && options.movies.length
-      ? options.movies
-      : [];
-    movieContentRotationDirectList = directMovies;
-    movieContentRotationPrompts = items;
-    movieContentRotationIndex = 0;
-    let intervalMs = Math.max(5, Number(options?.intervalSeconds || 30)) * 1000;
-
-    if (isPlayAll3Min && directMovies.length) {
-      // Sequential loop: each movie plays its slot, AI answer finishes, then next movie
-      void runPlayAll3MinLoop(directMovies);
-      const slotSec = Math.round(PLAY_ALL_TOTAL_MS / directMovies.length / 1000);
-      intervalMs = slotSec * 1000;
-      appendChatMessage('assistant', `Started Play All: ${directMovies.length} movies × ~${slotSec}s = 4.5 min total. Waits for AI answer before each transition.`);
-    } else {
-      movieContentRotationMode = (rawMode === 'ended') ? 'ended' : 'interval';
-
-      if (options?.immediate !== false) {
-        void runMovieRotationStep(options);
-      }
-
-      if (movieContentRotationMode === 'interval') {
-        movieContentRotationTimer = window.setInterval(() => {
-          void runMovieRotationStep(options);
-        }, intervalMs);
-        appendChatMessage('assistant', `Started content-driven movie rotation every ${Math.round(intervalMs / 1000)} seconds.`);
-      } else {
-        appendChatMessage('assistant', 'Started content-driven movie rotation: advance on each movie end.');
-      }
-    }
-
-    return {
-      ok: true,
-      running: true,
-      intervalSeconds: intervalMs / 1000,
-      mode: movieContentRotationMode,
-      prompts: items,
-    };
-  }
-
-  function createMovieRotationPanel() {
-    const panel = document.createElement('section');
-    panel.className = 'movie-rotation-panel';
-    panel.innerHTML = `
-      <div class="movie-rotation-panel__header">Movie Rotation</div>
-      <label class="movie-rotation-panel__label" for="movie-rotation-mode">Mode</label>
-      <select id="movie-rotation-mode" class="movie-rotation-panel__input">
-        <option value="play-all-3min">Play All · 4.5 min, finish answer</option>
-        <option value="interval">Every N seconds</option>
-        <option value="ended">After movie ends</option>
-      </select>
-      <label class="movie-rotation-panel__label" id="movie-rotation-movies-label" for="movie-rotation-movies">Movies (e.g. 3)</label>
-      <input id="movie-rotation-movies" class="movie-rotation-panel__input" type="text" placeholder="3" value="3" />
-      <label class="movie-rotation-panel__label" for="movie-rotation-interval">Interval (sec)</label>
-      <input id="movie-rotation-interval" class="movie-rotation-panel__input" type="number" min="5" step="5" value="30" />
-      <label class="movie-rotation-panel__label" for="movie-rotation-prompts">Content Prompts</label>
-      <textarea id="movie-rotation-prompts" class="movie-rotation-panel__textarea" rows="5">${defaultMovieContentRotation.join('\n')}</textarea>
-      <div class="movie-rotation-panel__actions">
-        <button type="button" class="movie-rotation-panel__button" data-action="start">Start</button>
-        <button type="button" class="movie-rotation-panel__button movie-rotation-panel__button--secondary" data-action="stop">Stop</button>
-      </div>
-      <div class="movie-rotation-panel__status" data-role="status">Idle</div>
-    `;
-
-    const intervalInput = panel.querySelector('#movie-rotation-interval');
-    const modeInput = panel.querySelector('#movie-rotation-mode');
-    const promptsInput = panel.querySelector('#movie-rotation-prompts');
-    const moviesLabel = panel.querySelector('#movie-rotation-movies-label');
-    const moviesInput = panel.querySelector('#movie-rotation-movies');
-    const statusEl = panel.querySelector('[data-role="status"]');
-    const startButton = panel.querySelector('[data-action="start"]');
-    const stopButton = panel.querySelector('[data-action="stop"]');
-
-    function syncPanelVisibility() {
-      const isPlayAll = modeInput?.value === 'play-all-3min';
-      [moviesLabel, moviesInput].forEach(el => { if (el) el.style.display = isPlayAll ? '' : 'none'; });
-    }
-    syncPanelVisibility();
-    modeInput?.addEventListener('change', syncPanelVisibility);
-
-    startButton?.addEventListener('click', () => {
-      const prompts = String(promptsInput?.value || '')
-        .split(/\r?\n/)
-        .map(line => line.trim())
-        .filter(Boolean);
-      const intervalSeconds = Math.max(5, Number(intervalInput?.value || 30));
-      const mode = String(modeInput?.value || 'interval').toLowerCase();
-      const moviesRaw = String(moviesInput?.value || '');
-      const movies = moviesRaw.split(',').map(s => s.trim()).filter(Boolean).map(n => `Synthetic_Desires_${n}.mp4`);
-      const result = startMovieContentRotation(prompts, { intervalSeconds, mode, movies: movies.length ? movies : undefined });
-      statusEl.textContent = result.ok
-        ? ((mode === 'play-all-3min' || mode === 'play-all-4-5min') ? `Running: Play All · 4.5 min, finish answer (movies: ${moviesRaw})`
-          : mode === 'ended' ? 'Running until each movie ends'
-          : `Running every ${intervalSeconds}s`)
-        : (result.message || 'Could not start rotation.');
-    });
-
-    stopButton?.addEventListener('click', () => {
-      stopMovieContentRotation();
-      statusEl.textContent = 'Stopped';
-    });
-
-    document.body.appendChild(panel);
-  }
-
-  window.changeMovieByContent = changeMovieByContent;
-  window.rankMoviesByContent = rankMoviesByContent;
-  window.startMovieContentRotation = startMovieContentRotation;
-  window.stopMovieContentRotation = stopMovieContentRotation;
-
   // ─── EVENT LISTENERS ───
 
   // ─── VIDEO IMPORT LISTENERS (BETA ONLY) ───
@@ -15693,11 +14573,11 @@ const startGestureApp = () => {
         // For silent videos, mute/unmute the background audio track
         const nowMuted = !bgAudio.muted;
         bgAudio.muted = nowMuted;
-        safeSetText(btnMute, nowMuted ? '🔇' : '🔊');
+        syncMuteButton(nowMuted);
         return;
       }
       const muted = vm.toggleMute();
-      safeSetText(btnMute, muted ? '🔇' : '🔊');
+      syncMuteButton(muted);
     });
   }
 
@@ -15799,11 +14679,11 @@ const startGestureApp = () => {
         return;
       }
 
-      const wasListening = voiceManager.isListening || voiceManager.keepListening;
+      const wasListening = voiceManager.isListening || voiceManager.keepListening || voiceManager.micStarting;
       const sessionActive = Boolean(
         wasListening
         || podcastGuestMicWindowActive
-        || (isVoiceSessionActive && btnVoiceMic?.classList.contains('listening'))
+        || btnVoiceMic?.classList.contains('listening')
       );
       lastPodcastGuestMicManualRequestAt = Date.now();
 
@@ -15880,7 +14760,7 @@ const startGestureApp = () => {
         }
         return;
       }
-      const toggled = await startFreeChatMicSession();
+      const toggled = await startFreeChatMicSession({ userInitiated: true });
       if (!toggled) {
         clearPodcastGuestMicAutoStopTimer();
         return;
@@ -15951,19 +14831,25 @@ const startGestureApp = () => {
     if (aiSpeakTimer) clearTimeout(aiSpeakTimer);
   }
 
+  function showPodcastStartBubble() {
+    showBubbleThinking();
+    safeSetText(aiText, 'Starting Podcast...');
+    setAiSpeechStateChip('Loading podcast', true);
+  }
+
+  function hidePodcastStartBubble() {
+    if (String(aiText?.textContent || '').trim() !== 'Starting Podcast...') return;
+    setTimeout(() => {
+      if (String(aiText?.textContent || '').trim() !== 'Starting Podcast...') return;
+      if (aiVoicePanel) aiVoicePanel.classList.add('hidden');
+      if (aiSpeechBubble) aiSpeechBubble.classList.remove('thinking');
+    }, 3000);
+  }
+
   function showAiSpeech(text, isRobot, options = {}) {
     updateConversationModeUi();
     if (aiVoicePanel) aiVoicePanel.classList.remove('hidden');
-    const normalizedSpeechText = typeof text === 'string'
-      ? text.replace(/^\?\?\s+/, '')
-      : text;
-    const bubbleText = !options?.disableQuestionAnswerPairing && isRobot
-      && lastBubbleQuestionText
-      && typeof normalizedSpeechText === 'string'
-      && (Date.now() - lastBubbleQuestionAt) < 30000
-      ? `Q: ${lastBubbleQuestionText}\nA: ${normalizedSpeechText}`
-      : normalizedSpeechText;
-    safeSetText(aiText, bubbleText);
+    safeSetText(aiText, text);
     setAiSpeechStateChip(isRobot ? 'AI reply' : 'Mic live', !isRobot || isVoiceSessionActive);
 
     if (isRobot) {

@@ -14,18 +14,43 @@ const blendRight = args.get('--blend-right') === 'true';
 const frameCount = Number(args.get('--frames') || 39);
 const fps = Number(args.get('--fps') || 6);
 const durationSec = Number(args.get('--duration') || 90);
+const width = Number(args.get('--width') || 512);
+const height = Number(args.get('--height') || 512);
 const forgeDateRoot = args.get('--forge-root') || 'D:\\SD_Deforum_Fresh\\outputs\\img2img-images\\2026-07-18';
+const styleSource = args.get('--style-source') || '';
 const previewRoot = path.join(process.cwd(), 'outputs', 'deforum-merged-previews');
 const freshDir = path.join(forgeDateRoot, `${outputPrefix}_frames`);
-const visibleDir = path.join(forgeDateRoot, `${outputPrefix}_90sec_visible_frames`);
-const finalDir = path.join(forgeDateRoot, `${outputPrefix}_FINAL_90sec_frames`);
-const right90 = args.get('--right-source') || '';
+const visibleDir = path.join(forgeDateRoot, `${outputPrefix}_${durationSec}sec_visible_frames`);
+const finalDir = path.join(forgeDateRoot, `${outputPrefix}_FINAL_${durationSec}sec_frames`);
+const rightSource = args.get('--right-source') || '';
+const blendRatio = Math.max(0, Math.min(1, Number(args.get('--blend-ratio') || 0.30)));
+const blendMode = args.get('--blend-mode') || 'linear'; // 'linear' or 'overlay'
 
 const data = JSON.parse(readFileSync(beatsPath, 'utf8'));
 const beats = (data.beats || []).filter(Boolean);
 if (!beats.length) throw new Error(`No beats found in ${beatsPath}`);
 
 function findStyleFrames() {
+  if (styleSource) {
+    if (!existsSync(styleSource)) throw new Error(`Style source does not exist: ${styleSource}`);
+    const sourceDir = path.join(forgeDateRoot, `${outputPrefix}_style_source_frames`);
+    mkdirSync(sourceDir, { recursive: true });
+    rmSync(sourceDir, { recursive: true, force: true });
+    mkdirSync(sourceDir, { recursive: true });
+    if (/\.mp4$/i.test(styleSource)) {
+      execFileSync('ffmpeg', [
+        '-y', '-loglevel', 'error', '-i', styleSource,
+        '-vf', `fps=${fps},scale=${width}:${height}:force_original_aspect_ratio=increase,crop=${width}:${height},format=rgb24`,
+        path.join(sourceDir, '%05d-sd4.png')
+      ], { stdio: 'inherit' });
+    }
+    const sourceFrames = readdirSync(sourceDir)
+      .filter((name) => /\.png$/i.test(name))
+      .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }))
+      .map((name) => path.join(sourceDir, name));
+    if (sourceFrames.length) return sourceFrames;
+    throw new Error(`No style frames extracted from ${styleSource}`);
+  }
   const roots = [
     forgeDateRoot,
     'D:\\SD_Deforum_Fresh\\outputs\\img2img-images\\2026-07-17'
@@ -72,8 +97,8 @@ async function img2img({ initPath, beat, index }) {
     ].join(', '),
     negative_prompt: negativePrompt,
     steps: 18,
-    width: 512,
-    height: 512,
+    width,
+    height,
     cfg_scale: 5.5,
     sampler_name: 'Euler',
     denoising_strength: index % 3 === 0 ? 0.62 : 0.48,
@@ -106,31 +131,44 @@ for (let index = 0; index < frameCount; index += 1) {
 }
 
 const keyMp4 = path.join(previewRoot, `${outputPrefix}_KEYFRAMES.mp4`);
-const left90 = path.join(previewRoot, `${outputPrefix}_LEFT_90SEC.mp4`);
-const final90 = path.join(previewRoot, `${outputPrefix}_90SEC_RIGHT_STRONG.mp4`);
+const leftMovie = path.join(previewRoot, `${outputPrefix}_LEFT_${durationSec}SEC.mp4`);
+const finalMovie = path.join(previewRoot, `${outputPrefix}_${durationSec}SEC_RIGHT_STRONG.mp4`);
 const sourceRate = `${frameCount}/${durationSec}`;
 const totalFrames = Math.round(durationSec * fps);
 
-execFileSync('ffmpeg', ['-y', '-loglevel', 'error', '-framerate', String(fps), '-i', path.join(freshDir, 'voiceover_fresh_%04d.png'), '-frames:v', String(frameCount), '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-movflags', '+faststart', keyMp4], { stdio: 'inherit' });
-execFileSync('ffmpeg', ['-y', '-loglevel', 'error', '-framerate', sourceRate, '-i', path.join(freshDir, 'voiceover_fresh_%04d.png'), '-vf', `minterpolate=fps=${fps}:mi_mode=mci:mc_mode=aobmc:me_mode=bidir,format=yuv420p`, '-frames:v', String(totalFrames), '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-movflags', '+faststart', left90], { stdio: 'inherit' });
-execFileSync('ffmpeg', ['-y', '-loglevel', 'error', '-i', left90, path.join(visibleDir, 'voiceover_visible_%04d.png')], { stdio: 'inherit' });
+execFileSync('ffmpeg', ['-y', '-loglevel', 'error', '-framerate', String(fps), '-i', path.join(freshDir, 'voiceover_fresh_%04d.png'), '-frames:v', String(frameCount), '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-vf', `hqdn3d=2:2:2:3,scale=${width}:${height}:force_original_aspect_ratio=increase,crop=${width}:${height},format=yuv420p`, '-movflags', '+faststart', keyMp4], { stdio: 'inherit' });
+execFileSync('ffmpeg', ['-y', '-loglevel', 'error', '-framerate', sourceRate, '-i', path.join(freshDir, 'voiceover_fresh_%04d.png'), '-vf', `minterpolate=fps=${fps}:mi_mode=mci:mc_mode=aobmc:me_mode=bidir,tpad=stop_mode=clone:stop_duration=${durationSec},format=yuv420p`, '-t', String(durationSec), '-frames:v', String(totalFrames), '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-movflags', '+faststart', leftMovie], { stdio: 'inherit' });
+execFileSync('ffmpeg', ['-y', '-loglevel', 'error', '-i', leftMovie, path.join(visibleDir, 'voiceover_visible_%04d.png')], { stdio: 'inherit' });
 
 if (blendRight) {
-  if (!right90 || !existsSync(right90)) throw new Error(`Missing right 90s source: ${right90}`);
-  execFileSync('ffmpeg', ['-y', '-loglevel', 'error', '-i', left90, '-i', right90, '-filter_complex', '[0:v]scale=512:512,setsar=1[left];[1:v]scale=512:512,setsar=1[right];[left][right]blend=all_expr=A*0.25+B*0.75,format=yuv420p[v]', '-map', '[v]', '-frames:v', String(totalFrames), '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-movflags', '+faststart', final90], { stdio: 'inherit' });
+  if (!rightSource || !existsSync(rightSource)) throw new Error(`Missing right ${durationSec}s source: ${rightSource}`);
+  const leftOpacity = Number((1 - blendRatio).toFixed(3));
+  const rightOpacity = Number(blendRatio.toFixed(3));
+  let filterComplex;
+  if (blendMode === 'overlay') {
+    // Voice-over content (left) is overlaid on top of the right source (Deforum/original).
+    // blendRatio controls right-source visibility: higher value = more Deforum visible underneath.
+    const vocOpacity = Number((1 - blendRatio).toFixed(3));
+    filterComplex = `[0:v]scale=${width}:${height},setsar=1,format=yuva420p,colorchannelmixer=aa=${vocOpacity}[voc];[1:v]scale=${width}:${height},setsar=1[base];[base][voc]overlay=format=auto,format=yuv420p[v]`;
+  } else if (blendMode === 'split') {
+    filterComplex = `[0:v]scale=256:512:force_original_aspect_ratio=decrease,pad=256:512:(ow-iw)/2:(oh-ih)/2,setsar=1[left];[1:v]scale=256:512:force_original_aspect_ratio=decrease,pad=256:512:(ow-iw)/2:(oh-ih)/2,setsar=1[right];[left][right]hstack=inputs=2,format=yuv420p[v]`;
+  } else {
+    filterComplex = `[0:v]scale=${width}:${height},setsar=1[left];[1:v]scale=${width}:${height},setsar=1[right];[left][right]blend=all_expr=A*${leftOpacity}+B*${rightOpacity},format=yuv420p[v]`;
+  }
+  execFileSync('ffmpeg', ['-y', '-loglevel', 'error', '-i', leftMovie, '-i', rightSource, '-filter_complex', filterComplex, '-map', '[v]', '-frames:v', String(totalFrames), '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-movflags', '+faststart', finalMovie], { stdio: 'inherit' });
 } else {
-  execFileSync('ffmpeg', ['-y', '-loglevel', 'error', '-i', left90, '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-movflags', '+faststart', final90], { stdio: 'inherit' });
+  execFileSync('ffmpeg', ['-y', '-loglevel', 'error', '-i', leftMovie, '-vf', `tpad=stop_mode=clone:stop_duration=${durationSec},format=yuv420p`, '-t', String(durationSec), '-frames:v', String(totalFrames), '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-movflags', '+faststart', finalMovie], { stdio: 'inherit' });
 }
-execFileSync('ffmpeg', ['-y', '-loglevel', 'error', '-i', final90, path.join(finalDir, 'final_fresh_%04d.png')], { stdio: 'inherit' });
+execFileSync('ffmpeg', ['-y', '-loglevel', 'error', '-i', finalMovie, path.join(finalDir, 'final_fresh_%04d.png')], { stdio: 'inherit' });
 
-const probe = JSON.parse(execFileSync('ffprobe', ['-v', 'error', '-select_streams', 'v:0', '-show_entries', 'stream=width,height,nb_frames,r_frame_rate', '-show_entries', 'format=duration', '-of', 'json', final90], { encoding: 'utf8' }));
+const probe = JSON.parse(execFileSync('ffprobe', ['-v', 'error', '-select_streams', 'v:0', '-show_entries', 'stream=width,height,nb_frames,r_frame_rate', '-show_entries', 'format=duration', '-of', 'json', finalMovie], { encoding: 'utf8' }));
 console.log(JSON.stringify({
   keyframes: frameCount,
   beatsUsed: beats.length,
   freshFrameFolder: freshDir,
   visibleFrameFolder: visibleDir,
   finalFrameFolder: finalDir,
-  finalMovie: path.basename(final90),
+  finalMovie: path.basename(finalMovie),
   width: probe.streams?.[0]?.width,
   height: probe.streams?.[0]?.height,
   frames: probe.streams?.[0]?.nb_frames,

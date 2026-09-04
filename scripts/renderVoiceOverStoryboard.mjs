@@ -9,7 +9,7 @@ const execFileAsync = promisify(execFile);
 function printUsage() {
   console.log([
     'Usage:',
-    '  node scripts/renderVoiceOverStoryboard.mjs --storyboard <file.json> --frames-dir <dir> [--out <file.mp4>] [--audio <file>] [--width 1280] [--height 720] [--fps 12] [--motion-mode auto|none]',
+    '  node scripts/renderVoiceOverStoryboard.mjs --storyboard <file.json> --frames-dir <dir> [--out <file.mp4>] [--audio <file>] [--width 1280] [--height 720] [--fps 12] [--motion-mode auto|none|morph]',
     '',
     'Expected frame names:',
     '  <segment.id>.png or .jpg or .jpeg or .webp',
@@ -185,12 +185,12 @@ function buildSegmentFilter(segment, options) {
   const scaledHeight = roundEven(height * overscanFactor);
 
   if (options.motionMode === 'none') {
-    return `scale=${scaledWidth}:${scaledHeight}:force_original_aspect_ratio=cover,crop=${width}:${height},fps=${fps},format=yuv420p`;
+    return `scale=${scaledWidth}:${scaledHeight},crop=${width}:${height},fps=${fps},format=yuv420p`;
   }
 
   const motion = buildZoomPanExpressions(segment, frames);
   return [
-    `scale=${scaledWidth}:${scaledHeight}:force_original_aspect_ratio=cover`,
+    `scale=${scaledWidth}:${scaledHeight}`,
     `zoompan=z='${motion.z}':x='${motion.x}':y='${motion.y}':d=${frames}:s=${width}x${height}:fps=${fps}`,
     'format=yuv420p'
   ].join(',');
@@ -243,6 +243,41 @@ function buildConcatManifestFromClips(clips = []) {
   return `${lines.join('\n')}\n`;
 }
 
+async function renderMorphStoryboard(storyboard, framesDir, outputPath, options) {
+  const framePaths = [];
+  for (const segment of storyboard.segments) {
+    const framePath = await resolveFrameFile(framesDir, segment.id);
+    if (!framePath) throw new Error(`Missing keyframe image for: ${segment.id}`);
+    framePaths.push(framePath);
+  }
+
+  const concatPath = path.join(os.tmpdir(), `voice-over-morph-${Date.now()}.txt`);
+  const entries = storyboard.segments.flatMap((segment, index) => [
+    `file '${framePaths[index].replace(/'/g, "'\\''")}'`,
+    `duration ${normalizeDuration(segment.durationSec, options.fps).toFixed(3)}`
+  ]);
+  entries.push(`file '${framePaths[0].replace(/'/g, "'\\''")}'`);
+  entries.push(`duration ${normalizeDuration(storyboard.segments.at(-1).durationSec, options.fps).toFixed(3)}`);
+  entries.push(`file '${framePaths[0].replace(/'/g, "'\\''")}'`);
+  await fs.writeFile(concatPath, `${entries.join('\n')}\n`, 'utf8');
+
+  const totalDuration = storyboard.segments.reduce(
+    (sum, segment) => sum + normalizeDuration(segment.durationSec, options.fps),
+    0
+  );
+  const args = [
+    '-y', '-f', 'concat', '-safe', '0', '-i', concatPath,
+    '-vf', `scale=${roundEven(options.width)}:${roundEven(options.height)},minterpolate=fps=${Math.round(options.fps)}:mi_mode=mci:mc_mode=aobmc:me_mode=bidir,trim=duration=${totalDuration.toFixed(3)},setpts=PTS-STARTPTS,format=yuv420p`,
+    '-an', '-c:v', 'libx264', '-preset', 'medium', '-crf', '18', '-pix_fmt', 'yuv420p',
+    '-movflags', '+faststart', outputPath
+  ];
+  try {
+    await runBinary('ffmpeg', args);
+  } finally {
+    await fs.unlink(concatPath).catch(() => {});
+  }
+}
+
 async function main() {
   const options = parseArgs(process.argv.slice(2));
   if (options.help || !options.storyboard || !options.framesDir) {
@@ -255,6 +290,11 @@ async function main() {
   const width = Number.isFinite(Number(options.width)) ? Number(options.width) : 1280;
   const height = Number.isFinite(Number(options.height)) ? Number(options.height) : 720;
   const outputPath = options.out || path.resolve(process.cwd(), `${storyboard.slug || 'voice-over'}-animatic.mp4`);
+  if (options.motionMode === 'morph') {
+    await renderMorphStoryboard(storyboard, options.framesDir, outputPath, { fps, width, height });
+    console.log(`Rendered ${outputPath}`);
+    return;
+  }
   const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'voice-over-storyboard-'));
   const clips = await renderStoryboardClips(storyboard, options.framesDir, tempDir, {
     fps,

@@ -127,6 +127,25 @@ export default defineConfig(({ mode }) => {
         configureServer(server) {
           Object.assign(process.env, env);
 
+          server.middlewares.use(createApiMiddleware('/api/dev/save-capture', async (req, res) => {
+            const body = req.body || {};
+            const filename = String(body.filename || `capture_${Date.now()}.png`).replace(/[^a-z0-9_.-]/gi, '_');
+            const folder = String(body.folder || 'outputs/podcast-captures-sd1').replace(/\.\./g, '');
+            const targetDir = resolve(process.cwd(), folder);
+            if (!existsSync(targetDir)) {
+              mkdirSync(targetDir, { recursive: true });
+            }
+            const base64 = String(body.base64 || '').replace(/^data:image\/\w+;base64,/, '');
+            if (!base64) {
+              res.status(400).json({ error: 'Missing base64 data' });
+              return;
+            }
+            const buffer = Buffer.from(base64, 'base64');
+            const targetPath = join(targetDir, filename);
+            writeFileSync(targetPath, buffer);
+            res.json({ ok: true, path: targetPath, size: buffer.length });
+          }, { parseBody: true }));
+
           server.middlewares.use(createApiMiddleware('/api/dev/style-frame-preview', async (req, res) => {
             const url = new URL(req.url, 'http://localhost');
             const forgeRoot = env.SD_FORGE_ROOT || 'D:\\SD_Deforum_Fresh';

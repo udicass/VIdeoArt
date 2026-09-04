@@ -1,0 +1,40 @@
+{
+  "version": "V49",
+  "duration_seconds": 120,
+  "prompt_timeline": "prompts/androids_dream_VOC_V6_CONTINUATION_V47_120SEC.json",
+  "source_face_directory": "D:\\SD_Deforum_Fresh\\outputs\\androids-text-frames\\2026-08-09\\androids_dream_VOC_V6_CONTENT_STABILIZED_V16_NO_DEVIATION_frames",
+  "source_face_cycle": [
+    "single_figure_0001.png",
+    "single_figure_0002.png",
+    "single_figure_0003.png",
+    "single_figure_0004.png",
+    "single_figure_0005.png",
+    "single_figure_0006.png",
+    "single_figure_0007.png",
+    "single_figure_0008.png",
+    "single_figure_0009.png",
+    "single_figure_0010.png",
+    "single_figure_0011.png",
+    "single_figure_0012.png"
+  ],
+  "face_schedule": {
+    "selection": "face_index = second_index modulo 12",
+    "repetitions": 10,
+    "total_keyframes": 120,
+    "instruction": "For each one-second keyframe, use the scheduled V6 source face as the img2img init image. Faithfully preserve that input face identity, hair, crop, lighting, and expression. Never use a previously generated image as the next init image."
+  },
+  "base_prompt_override": "one adult human woman, natural human skin, dark hair, clearly human, faithfully preserve the exact face identity, proportions, hair, frontal crop, and V6 blue CRT lighting from this input image, centered portrait, fixed camera, clean dark background, muted cool blue CRT tint, restrained photographic realism, silver gelatin portrait, subtle scanline texture, Do Androids Dream of Electric Sheep, empathy and uncertain identity, sharp coherent facial anatomy, smooth skin, no scene change",
+  "negative_prompt_additions": "different person, face swap, identity drift, duplicate face, second face, two people, extra eyes, mask, porcelain, android, plastic skin, face paint, cracked skin, heavy texture, profile, three-quarter view, tilted head, looking away, cropped forehead, cropped chin, black bar, border, text, watermark, logo, distorted face, melted face, image noise",
+  "generation": {
+    "width": 512,
+    "height": 512,
+    "sampler": "DPM++ 2M",
+    "scheduler": "Karras",
+    "steps": 24,
+    "cfg_scale": 5.5,
+    "denoising_strength": 0.10,
+    "seed_start": 713370000,
+    "keyframe_rate": "one clean CUDA keyframe per second",
+    "delivery": "interpolate the 120 source-face keyframes to 10 fps, then pad the tail in a separate FFmpeg pass to exactly 120 seconds"
+  }
+}

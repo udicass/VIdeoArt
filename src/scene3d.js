@@ -4,6 +4,7 @@
  */
 import * as THREE from 'three';
 import { VideoMesh } from './videoMesh.js';
+import { capturePrintReadyFrame } from './print/capturePrintReadyFrame.js';
 
 // ─── CONSTANTS ───
 const GRAVITY_NORMAL = -9.8;
@@ -668,5 +669,25 @@ export class Scene3D {
 
         // Render
         this.renderer.render(this.scene, this.camera);
+    }
+
+    capturePrintReadyFrame(options = {}) {
+        const { sceneId = 'scene', overlayText = '', ...captureOptions } = options;
+        return capturePrintReadyFrame({
+            THREE,
+            renderer: this.renderer,
+            scene: this.scene,
+            camera: this.camera,
+            hiddenObjects: [
+                this.handCursor,
+                this.handCursor2,
+                this.handRing,
+                this.handRing2,
+                this.handLine
+            ],
+            sceneId,
+            overlayText,
+            ...captureOptions
+        });
     }
 }

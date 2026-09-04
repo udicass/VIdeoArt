@@ -18,6 +18,31 @@
 </head>
 
 <body>
+  <div id="access-gate" class="access-gate" role="dialog" aria-modal="true" aria-labelledby="access-gate-title">
+    <div class="access-film-strip" aria-hidden="true">
+      <video autoplay muted loop playsinline preload="none" poster="/login-media/sd3-poster.webp" data-src="/login-media/sd3-login.mp4"></video>
+      <video autoplay muted loop playsinline preload="none" poster="/login-media/sd4-poster.webp" data-src="/login-media/sd4-login.mp4"></video>
+    </div>
+    <div class="access-gate-wash" aria-hidden="true"></div>
+    <div class="access-dialog">
+      <button id="access-mark" class="access-mark" type="button" aria-label="Synthetic Desires">SD</button>
+      <p class="access-kicker">Private screening room</p>
+      <h1 id="access-gate-title">Synthetic Desires</h1>
+      <p class="access-copy">&quot;Synthetic Desires&quot; is in stealth mode, with Exclusive Access for users who already have an invitation.<br><br>Please enter your email address to gain access.</p>
+      <form id="access-form" class="access-form" method="post">
+        <label class="access-label" for="access-email">Invitation email</label>
+        <div class="access-input-row">
+          <input id="access-email" name="email" type="email" autocomplete="email" placeholder="you@example.com" required>
+          <button type="submit" id="access-submit">Enter <span aria-hidden="true">-&gt;</span></button>
+        </div>
+        <p id="access-status" class="access-status" role="status" aria-live="polite"></p>
+      </form>
+      <p class="access-signoff">Thank you!<br><span>Udi Cassirer</span></p>
+      <p class="access-support">For Support Access &amp; questions, <a id="access-support-link" href="#" rel="nofollow">click here.</a></p>
+      <p class="access-copyright">Copyright &copy; 2026 Udi Cassirer.</p>
+    </div>
+  </div>
+
   <!-- Loading Screen -->
   <div id="loading-screen">
     <div class="loader-content">
@@ -138,10 +163,7 @@
           </div>
         </div>
         <div class="status-pills">
-          <div class="pill" id="pill-tracking">
-            <span class="pill-dot"></span>
-            <span>Tracking</span>
-          </div>
+          <button id="guide-help-btn" class="pill guide-help-btn hidden" type="button" title="Show guide" aria-expanded="false">Help</button>
           <div class="pill" id="pill-gravity" role="button" tabindex="0" title="Toggle Anti-Gravity">
             <span class="pill-dot"></span>
             <span>Gravity: Normal</span>
@@ -150,6 +172,14 @@
             <span class="pill-dot"></span>
             <span>60 FPS</span>
           </div>
+          <a
+            class="artist-statement-link"
+            href="/Trajectory.pdf"
+            target="_blank"
+            rel="noopener"
+            title="Open artist statement PDF"
+            aria-label="Open Trajectory From Permeable to Synthetic Desire PDF in a new tab"
+          >i</a>
         </div>
       </header>
 
@@ -219,6 +249,23 @@
           </svg>
         </button>
       </div>
+      <div id="audio-controls" aria-label="Audio controls">
+        <button id="btn-mute" class="tlp-btn" type="button" aria-label="Mute audio" aria-pressed="false" title="Mute audio">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"
+            stroke-linejoin="round" aria-hidden="true">
+            <path d="M11 5 6.5 9H3v6h3.5l4.5 4V5Z" />
+            <g class="sound-waves">
+              <path d="M15 9.5a4 4 0 0 1 0 5" />
+              <path d="M18 7a7.5 7.5 0 0 1 0 10" />
+            </g>
+            <g class="mute-mark">
+              <path d="m16 10 5 5" />
+              <path d="m21 10-5 5" />
+            </g>
+          </svg>
+        </button>
+        <input id="video-volume" class="tlp-volume" type="range" min="0" max="100" step="1" value="16" aria-label="Master volume">
+      </div>
     </div>
     <!-- AI Voice Overlay -->
     <div id="ai-voice-panel" class="hidden">
@@ -247,7 +294,6 @@
         <div id="conversation-mode-toggle" class="conversation-mode-toggle hidden" aria-label="Conversation mode switcher">
           <button id="conversation-mode-chat" class="conversation-mode-btn active" type="button" title="Switch to direct free chat">Free Chat</button>
           <button id="conversation-mode-podcast" class="conversation-mode-btn" type="button" title="Switch to podcast stage mode">Podcast</button>
-          <button id="btn-story-mode" class="conversation-mode-btn conversation-mode-btn-story" type="button" title="Run a slower noir voice-over based on the current movie">Voice Over</button>
           <button id="ai-mode-split" class="conversation-mode-btn ai-mode-pill-split" title="Split mode — Host A uses Gemini cloud, Host B uses local Gemma">⚡</button>
         </div>
         <div class="ai-mode-group" aria-label="AI mode switcher">
@@ -261,6 +307,7 @@
         <button id="btn-train-cloud" class="chat-train-btn chat-train-btn-cloud" type="button" title="Train explicitly with Cloud for 5 minutes">Train Cloud</button>
       <button id="btn-train-gemma-strict" class="chat-train-btn chat-train-btn-gemma" type="button" title="Train with strict Gemma only for 5 minutes. No Cloud or DICT fallback.">Strict Gemma</button>
       <button id="btn-full-run" class="chat-train-btn chat-train-btn-full-run" type="button" title="Full Run: Train → Podcast → Brain Check">◈ Full Run</button>
+      <button id="btn-story-mode" class="chat-train-btn chat-train-btn-story" type="button" title="Story Mode: Host A asks 2 questions, Muse tells the full scene narrative, saves to brain">◎ Story</button>
     </div>
     <div id="ai-chat-messages" class="chat-messages">
       <div class="chat-msg bot">
@@ -284,7 +331,7 @@
   </div>
 
   <!-- Controls -->
-    <div id="controls-panel">
+  <div id="controls-panel">
     <div class="controls-pills-row">
       <button id="btn-enable-ag-gesture" class="ctrl-pill-btn" title="Enable/Disable Anti-Gravity Gesture" style="display:none">
         <span class="btn-icon">🖐️</span>
@@ -308,14 +355,44 @@
     </div>
   </div>
     <div id="center-guide-overlay" class="center-guide-overlay">
+      <svg class="guide-callout-arrows" viewBox="0 0 1000 700" preserveAspectRatio="none" aria-hidden="true">
+        <defs>
+          <marker id="guide-arrowhead" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto">
+            <path d="M0,0 L10,5 L0,10" fill="none" stroke="currentColor" stroke-width="1.8" />
+          </marker>
+          <linearGradient id="guide-podcast-arrow" gradientUnits="userSpaceOnUse" x1="635" y1="290" x2="935" y2="78">
+            <stop offset="0" stop-color="#36c99a" stop-opacity="0.1" />
+            <stop offset="0.32" stop-color="#36c99a" stop-opacity="0.58" />
+            <stop offset="1" stop-color="#36c99a" />
+          </linearGradient>
+          <linearGradient id="guide-chat-arrow" gradientUnits="userSpaceOnUse" x1="645" y1="365" x2="925" y2="620">
+            <stop offset="0" stop-color="#36c99a" stop-opacity="0.1" />
+            <stop offset="0.32" stop-color="#36c99a" stop-opacity="0.58" />
+            <stop offset="1" stop-color="#36c99a" />
+          </linearGradient>
+          <linearGradient id="guide-movie-arrow" gradientUnits="userSpaceOnUse" x1="370" y1="380" x2="120" y2="620">
+            <stop offset="0" stop-color="#36c99a" stop-opacity="0.1" />
+            <stop offset="0.32" stop-color="#36c99a" stop-opacity="0.58" />
+            <stop offset="1" stop-color="#36c99a" />
+          </linearGradient>
+        </defs>
+        <path class="guide-callout-path active" data-guide-step="1" pathLength="1" d="M635,290 C755,285 820,160 935,78" stroke="url(#guide-podcast-arrow)" />
+        <path class="guide-callout-path" data-guide-step="2" pathLength="1" d="M645,365 C770,400 820,565 925,620" stroke="url(#guide-chat-arrow)" />
+        <path class="guide-callout-path" data-guide-step="3" pathLength="1" d="M370,380 C265,425 210,570 120,620" stroke="url(#guide-movie-arrow)" />
+      </svg>
       <div class="center-guide-card">
+        <button id="guide-close-btn" class="guide-close-btn" type="button" title="Close guide" aria-label="Close guide">×</button>
         <div class="center-guide-content">
           <h3>Guide:</h3>
-          <h2>Synthetic Desire Live</h2>
-          <p>Contextual AI suggests questions related to the current video.</p>
-          <p>Click or Talk a suggestion to initiate a free chat or queue a podcast episode.</p>
+          <div id="guide-step-counter" class="guide-step-counter" aria-live="polite">Step 1 of 3</div>
+          <p class="guide-step active" data-guide-step="1"><strong>Podcast Mode:</strong> Click the Podcast button in the chat to activate it (top right).</p>
+          <p class="guide-step" data-guide-step="2"><strong>Free Chat:</strong> Click the suggested questions in the pill-shaped bubbles (bottom right).</p>
+          <p class="guide-step" data-guide-step="3"><strong>Change Movie:</strong> Use the Skip buttons on the player (bottom left).</p>
         </div>
-        <button id="start-chat-btn" class="start-chat-btn">Start Chat</button>
+        <div class="guide-step-actions">
+          <button id="guide-prev-btn" class="guide-step-btn" type="button" disabled>Previous</button>
+          <button id="guide-next-btn" class="guide-step-btn guide-step-btn-primary" type="button">Next</button>
+        </div>
       </div>
     </div>
 
