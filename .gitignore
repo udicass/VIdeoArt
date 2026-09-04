@@ -105,3 +105,28 @@ services/litellm-proxy/
 src/movieBrains1.js
 src/movieBrains2.js
 src/movieBrains__.js
+
+# Python cache
+__pycache__/
+*.pyc
+
+# Local video source files (too large for git; keep on disk only)
+Video/
+
+# Debug/temp artifacts from capture bubble iteration
+scripts/fonts/
+scripts/fontTest*.mjs
+scripts/testBubble.mjs
+scripts/testBoldBubble.mjs
+scripts/testLiveMatching.mjs
+scripts/testReferenceMatch.mjs
+scripts/compareBubble.mjs
+scripts/findBorderLines.mjs
+scripts/measureMine.mjs
+scripts/zoomReference.mjs
+scripts/analyzeReference*.mjs
+scripts/font-*.png
+scripts/font-test*.png
+scripts/ref-*.png
+scripts/test-*.png
+scripts/compare*.png
